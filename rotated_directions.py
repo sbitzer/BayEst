@@ -565,6 +565,7 @@ class rotated_directions(rtmodel):
                 
             # call the compiled function
             choices, rts = self.gen_response_jitted(features, allpars, 
+                                                    self.criteria[trind],
                                                     changing_bound)
                 
             # transform choices to those expected by user, if necessary
@@ -578,13 +579,13 @@ class rotated_directions(rtmodel):
         return choices, rts
         
         
-    def gen_response_jitted(self, features, allpars, changing_bound):
+    def gen_response_jitted(self, features, allpars, criteria, changing_bound):
         toresponse_intern = np.r_[-1, self.toresponse[1]]
             
         # call the compiled function
         choices, rts = gen_response_jitted_dir(
                 features, self.maxrt, toresponse_intern, 
-                self.choices, self.dt, self.directions, self.criteria, 
+                self.choices, self.dt, self.directions, criteria, 
                 allpars['prior'], allpars['noisestd'], 
                 allpars['intstd'], allpars['bound'], allpars['bstretch'], 
                 allpars['bshape'], allpars['ndtmean'], allpars['ndtspread'], 
