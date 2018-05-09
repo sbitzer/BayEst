@@ -409,10 +409,11 @@ class rotated_directions(rtmodel):
         
         fig, ax = plt.subplots()
         for c in np.r_[self.toresponse[0], self.choices]:
-            lines = ax.plot(times, 
-                            dv[:, self.correct[trind] == c], 
-                            color=cols[c], alpha=.3)
-            lines[0].set_label(labels[c])
+            ind = self.correct[trind] == c
+            if ind.sum() > 0:
+                lines = ax.plot(times, dv[:, ind], 
+                                color=cols[c], alpha=.3)
+                lines[0].set_label(labels[c])
             
         ax.legend(loc='upper left')
         ax.set_xlabel('time (s)')
