@@ -178,7 +178,7 @@ class rotated_directions(rtmodel):
             S, self._L = Trials.shape
         elif Trials.ndim == 1:
             # check that Trials only contains valid directions
-            if np.all(np.in1d(np.unique(Trials), self.directions)):
+            if np.all(np.isin(np.unique(Trials), self.directions)):
                 # transform to indices into self.directions
                 self._Trials = np.array([
                         np.flatnonzero(self.directions == i)[0] 
