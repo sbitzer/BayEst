@@ -170,7 +170,8 @@ class rotated_directions(rtmodel):
         
     @Trials.setter
     def Trials(self, Trials):
-        Trials = np.array(Trials)
+        # ensure that Trials is array and is within [0, 2*pi]
+        Trials = np.array(Trials) % (2 * np.pi)
         
         if Trials.ndim == 2:
             self._Trials = Trials
