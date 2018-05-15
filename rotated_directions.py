@@ -204,7 +204,7 @@ class rotated_directions(rtmodel):
             return math.ceil(self.maxrt / self.dt) + 1
     
     parnames = ['bound', 'bstretch', 'bshape', 'noisestd', 'intstd', 'prior', 
-                'ndtmean', 'ndtspread', 'lapseprob', 'lapsetoprob']
+                'bias', 'ndtmean', 'ndtspread', 'lapseprob', 'lapsetoprob']
 
     @property
     def prior(self):
@@ -233,9 +233,9 @@ class rotated_directions(rtmodel):
     
     
     def __init__(self, Trials, dt=1, directions=8, criteria=0, prior=None, 
-                 noisestd=1, intstd=1, bound=0.8, bstretch=0, bshape=1.4, 
-                 ndtmean=-12, ndtspread=0, lapseprob=0.05, lapsetoprob=0.1, 
-                 **rtmodel_args):
+                 bias=0.5, noisestd=1, intstd=1, bound=0.8, bstretch=0, 
+                 bshape=1.4, ndtmean=-12, ndtspread=0, lapseprob=0.05,
+                 lapsetoprob=0.1, **rtmodel_args):
         super().__init__(**rtmodel_args)
             
         self._during_init = True
@@ -265,6 +265,9 @@ class rotated_directions(rtmodel):
             self.prior = np.ones(self.D-1) / self.D
         else:
             self.prior = prior
+            
+        # choice bias as prior probability that clockwise is correct
+        self.bias = bias
             
         # Standard deviation of noise added to feature values.
         self.noisestd = noisestd
@@ -317,6 +320,7 @@ class rotated_directions(rtmodel):
         info += 'ndtspread    : %7.2f' % self.ndtspread + '\n'
         info += 'lapseprob    : %7.2f' % self.lapseprob + '\n'
         info += 'lapsetoprob  : %7.2f' % self.lapsetoprob + '\n'
+        info += 'bias         : %7.2f' % self.bias + '\n'
         info += 'prior        : ' + ', '.join(map(lambda s: '{:8.3f}'.format(s), 
                                                   self.prior)) + '\n'
         
@@ -587,7 +591,7 @@ class rotated_directions(rtmodel):
         choices, rts = gen_response_jitted_dir(
                 features, self.maxrt, toresponse_intern, 
                 self.choices, self.dt, self.directions, criteria, 
-                allpars['prior'], allpars['noisestd'], 
+                allpars['prior'], allpars['bias'], allpars['noisestd'], 
                 allpars['intstd'], allpars['bound'], allpars['bstretch'], 
                 allpars['bshape'], allpars['ndtmean'], allpars['ndtspread'], 
                 allpars['lapseprob'], allpars['lapsetoprob'], changing_bound)
@@ -597,8 +601,8 @@ class rotated_directions(rtmodel):
 @jit(nopython=True, cache=True)
 def gen_response_jitted_dir(
         features, maxrt, toresponse, choices, dt, directions, criteria,
-        prior, noisestd, intstd, bound, bstretch, bshape, ndtmean, ndtspread, 
-        lapseprob, lapsetoprob, changing_bound):
+        prior, bias, noisestd, intstd, bound, bstretch, bshape, ndtmean, 
+        ndtspread, lapseprob, lapsetoprob, changing_bound):
     
     D = len(directions)
     C = len(choices)
@@ -662,8 +666,8 @@ def gen_response_jitted_dir(
                 # (renormalise to ignore probability mass at directions without
                 # information about rotation)
                 lp_rot = np.zeros(2)
-                lp_rot[0] = logsumexp(logprobs[cw]) 
-                lp_rot[1] = logsumexp(logprobs[acw])
+                lp_rot[0] = logsumexp(logprobs[cw]) + math.log(bias[tr])
+                lp_rot[1] = logsumexp(logprobs[acw]) + math.log(1 - bias[tr])
                 lp_rot -= logsumexp(lp_rot)
                 
                 if lp_rot[0] >= boundval or lp_rot[1] >= boundval:
