@@ -430,6 +430,59 @@ class rotated_directions(rtmodel):
         return fig, ax
     
     
+    def plot_dt_ndt_distributions(self, mean=None, cov=None, pars=None, R=30):
+        """Plot decision and non-decision time distributions separately.
+        
+        Uses either the parameters stored in the model, or the given parameter
+        posterior. Decision time distribution will include lapses.
+        """
+        
+        fig, ax = plt.subplots()
+        
+        if mean is not None:
+            params = pars.sample_transformed(self.L * R, mean, cov)
+            
+            inds = [pars.names[pars.names == 'ndtmean'].index.values[0],
+                    pars.names[pars.names == 'ndtspread'].index.values[0]]
+        
+        # sample from decision time distribution
+        if mean is None:
+            ndtmean = self.ndtmean
+            self.ndtmean = -30
+            choices, rts = self.gen_response(np.arange(self.L), rep=R)
+            self.ndtmean = ndtmean
+        else:
+            ndtmean = params[:, inds[0]].copy()
+            params[:, inds[0]] = -30
+            choices, rts = self.gen_response_with_params(
+                    np.tile(np.arange(self.L), R), params, pars.names)
+            params[:, inds[0]] = ndtmean
+            
+        self.plot_response_distribution(choices, rts, ax=ax)
+        
+        # sample from non-decision time distribution
+        if mean is None:
+            rts = np.random.lognormal(self.ndtmean, self.ndtspread, 
+                                      self.L * R)
+        else:
+            rts = np.array([np.random.lognormal(mu, sig) 
+                            for (mu, sig) in params[:, inds]])
+            
+        choices = self.choices[np.zeros(self.L * R, dtype=int)]
+        
+        self.plot_response_distribution(choices, rts, alpha=0.5, ax=ax)
+        
+        ax.set_xlabel('time (s)')
+        ax.set_ylabel('density')
+        
+        ax.legend([c[0] for c in ax.containers], 
+                  ['dt for choice %d' % self.choices[0], 
+                   'dt for choice %d' % self.choices[1], 
+                   'ndt'])
+        
+        return fig, ax
+    
+    
     def gen_response(self, trind, rep=1):
         N = trind.size
         if rep > 1:
