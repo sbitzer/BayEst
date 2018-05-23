@@ -354,7 +354,7 @@ class rotated_directions(rtmodel):
         """
         N = trind.size
         
-        times = np.arange(0, self.S * self.dt, self.dt)
+        times = np.arange(0, self.S) * self.dt
         
         logprior = np.r_[np.log(self.prior), np.log(1 - self.prior.sum())]
         
