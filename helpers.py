@@ -46,9 +46,9 @@ def load_subject(sub):
     
     data['easy'] = np.abs(data.tarDir - data.critDir) > 20
     
-    # ensure that directions are in valid ranges
-    data.tarDir = data.tarDir % 360
-    data.critDir = data.critDir % 180
+    # ensure that directions are in valid ranges and adhere to model definition
+    data.tarDir = -data.tarDir % 360
+    data.critDir = -data.critDir % 180
     
     # copy so that not the full dataframe is kept in memory, because the 
     # returned object is otherwise only a reference to the full dataframe

@@ -25,10 +25,13 @@ data = helpers.load_subject(sub)
 #%% create model
 dt = 0.05
 
+# first of these indicates clockwise rotation, second anti-clockwise
+choices = [1, -1]
+
 model = rtmodels.rotated_directions(
         data.tarDir / 180 * np.pi, dt, data.tarDir.unique() / 180 * np.pi, 
         data.critDir / 180 * np.pi, maxrt=data.dropna().RT.max() + dt,
-        toresponse=helpers.toresponse, choices=[-1, 1])
+        toresponse=helpers.toresponse, choices=choices)
 
 errorm = model.correct != data.response
 ind = data.response != 0
