@@ -81,7 +81,7 @@ erate_split = pd.Series(
 for sub in subjects:
     for easy in [True, False]:
         easystr = 'easy' if easy else 'hard'
-        data = alldata.loc[sub]
+        data = alldata.loc[sub].dropna()
         data = data[data.easy == easy]
         
         erate_split.loc[(easystr, sub, 'fast')] = data[
@@ -92,7 +92,7 @@ for sub in subjects:
 
 erate_split = erate_split.unstack('subset')
 
-grid = sns.jointplot('fast', 'slow', data=erate_split)
+grid = sns.jointplot('fast', 'slow', data=erate_split.loc['hard'])
 
 ax = grid.ax_joint
 ax.set_autoscale_on(False)
@@ -100,7 +100,7 @@ ax.plot(ax.get_xlim(), ax.get_xlim(), '--k', zorder=0)
 grid.ax_marg_x.set_title('error rates across subjects and difficulty')
 
 fig, ax = plt.subplots()
-erate_diff = erate_split.fast - erate_split.slow
+erate_diff = erate_split.loc['hard'].fast - erate_split.loc['hard'].slow
 sns.distplot(erate_diff, rug=True, ax=ax)
 
 ax.set_xlabel('error rate difference (fast - slow)')
