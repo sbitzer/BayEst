@@ -3,3 +3,4 @@
 *.gz
 .spyproject
 __pycache__
+*.svg
