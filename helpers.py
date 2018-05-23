@@ -6,7 +6,7 @@ Created on Tue May 15 10:06:41 2018
 @author: bitzer
 """
 
-import os
+import os, re
 import pandas as pd
 import numpy as np
 
@@ -14,6 +14,21 @@ datadir = "../data/behaviour/Data"
 
 choices = dict(left=-1, right=1)
 toresponse = [0, 3]
+
+
+def find_available_subjects(datadir=datadir):
+    """checks directories for data files (one per subject) and returns 
+    available subjects."""
+    
+    _, _, filenames = next(os.walk(datadir))
+    subjects = []
+    for fname in filenames:
+        match = re.match('^s(\d+)_main_data.txt$', fname)
+        if match is not None:
+            subjects.append(int(match.group(1)))
+    
+    return np.sort(subjects)
+
 
 def load_subject(sub):
     file = os.path.join(datadir, 's%02d_main_data.txt' % sub)
