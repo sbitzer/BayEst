@@ -43,7 +43,7 @@ assert np.all(data[ind].error == errorm[ind]), ("Model and data don't agree "
 pars = pyEPABC.parameters.parameter_container()
 pars.add_param('noisestd', 0, 1.2, exponential())
 #pars.add_param('intstd', 0, 1.2, exponential())
-model.intstd = 0.3
+model.intstd = 0.2
 pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 pars.add_param('bias', 0, .2, gaussprob())
 pars.add_param('ndtmean', -2, 1)
