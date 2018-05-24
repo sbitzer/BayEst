@@ -41,8 +41,9 @@ assert np.all(data[ind].error == errorm[ind]), ("Model and data don't agree "
 
 #%% infer
 pars = pyEPABC.parameters.parameter_container()
-pars.add_param('noisestd', 0, 1, exponential())
-pars.add_param('intstd', 0, 1, exponential())
+pars.add_param('noisestd', 0, 1.2, exponential())
+#pars.add_param('intstd', 0, 1.2, exponential())
+model.intstd = 0.3
 pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 pars.add_param('bias', 0, .2, gaussprob())
 pars.add_param('ndtmean', -2, 1)
@@ -50,7 +51,7 @@ pars.add_param('ndtspread', np.log(0.2), 1, exponential())
 pars.add_param('lapseprob', -1.65, 1, gaussprob()) # median approx at 0.05
 pars.add_param('lapsetoprob', 0, 1, gaussprob())
 
-#pars.plot_param_dist()
+pars.plot_param_dist()
 
 simfun = lambda data, dind, parsamples: model.gen_distances_with_params(
             data[0], data[1], dind, pars.transform(parsamples), pars.names)
@@ -100,3 +101,11 @@ rtfig.savefig('%02d_easy_vs_hard.svg' % sub)
 ndtfig, ndtax = model.plot_dt_ndt_distributions(ep_mean, ep_cov, pars)
 
 ndtfig.savefig('%02d_dt_vs_ndt.svg' % sub)
+
+
+#%% estimate posterior predictive log likelihoods
+ppls, nsamples = pyEPABC.estimate_predlik(
+        data[['response', 'RT']].values, simfun, ep_mean, ep_cov, epsilon, 
+        samplemax=1000000)
+
+print('ppl-sum = %8.1f, logml = %8.1f' % (ppls.sum(), ep_logml))
