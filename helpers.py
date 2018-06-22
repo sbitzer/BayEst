@@ -10,11 +10,12 @@ import os, re
 import pandas as pd
 import numpy as np
 
-datadir = "../data/behaviour/Data"
+datadir = "../data/behaviour/Data/raw"
 
+dt = 0.05
+maxrt = 2.0
 choices = dict(left=-1, right=1)
-toresponse = [0, 3]
-
+toresponse = [0, 3.0]
 
 def find_available_subjects(datadir=datadir):
     """checks directories for data files (one per subject) and returns 
