@@ -6,6 +6,8 @@ Created on Thu Apr 12 17:06:11 2018
 @author: bitzer
 """
 
+from __future__ import print_function, division
+
 import re
 import math
 import random
@@ -201,7 +203,7 @@ class rotated_directions(rtmodel):
             return self.Trials.shape[0]
         else:
             # the + 1 ensures that time outs can be generated
-            return math.ceil(self.maxrt / self.dt) + 1
+            return int(math.ceil(self.maxrt / self.dt)) + 1
     
     parnames = ['bound', 'bstretch', 'bshape', 'noisestd', 'intstd', 'prior', 
                 'bias', 'ndtmean', 'ndtspread', 'lapseprob', 'lapsetoprob']
@@ -236,7 +238,7 @@ class rotated_directions(rtmodel):
                  bias=0.5, noisestd=1, intstd=1, bound=0.8, bstretch=0, 
                  bshape=1.4, ndtmean=-12, ndtspread=0, lapseprob=0.05,
                  lapsetoprob=0.1, **rtmodel_args):
-        super().__init__(**rtmodel_args)
+        super(rotated_directions, self).__init__(**rtmodel_args)
             
         self._during_init = True
         
