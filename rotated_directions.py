@@ -12,7 +12,7 @@ import re
 import math
 import random
 import numpy as np
-from numba import jit
+from numba import jit, prange
 from warnings import warn
 from rtmodels import rtmodel
 import matplotlib.pyplot as plt
@@ -653,7 +653,7 @@ class rotated_directions(rtmodel):
             
         return choices, rts
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, parallel=True)
 def gen_response_jitted_dir(
         features, maxrt, toresponse, choices, dt, directions, criteria,
         prior, bias, noisestd, intstd, bound, bstretch, bshape, ndtmean, 
@@ -673,7 +673,7 @@ def gen_response_jitted_dir(
             boundvals[t] = math.log( boundfun((t+1.0) / maxrt, bound[0], 
                 bstretch[0], bshape[0]) )
     
-    for tr in range(N):
+    for tr in prange(N):
         # is it a lapse trial?
         if random.random() < lapseprob[tr]:
             # is it a timed-out lapse trial?
