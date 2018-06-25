@@ -31,7 +31,7 @@ def find_available_subjects(datadir=datadir):
     return np.sort(subjects)
 
 
-def load_subject(sub):
+def load_subject(sub, exclude_to=False, censor_late=True):
     file = os.path.join(datadir, 's%02d_main_data.txt' % sub)
     
     data = pd.read_csv(file, '\t')
@@ -50,6 +50,15 @@ def load_subject(sub):
     # ensure that directions are in valid ranges and adhere to model definition
     data.tarDir = -data.tarDir % 360
     data.critDir = -data.critDir % 180
+    
+    if censor_late:
+        timeouts = data.RT > maxrt
+        data.loc[timeouts, 'RT'] = toresponse[1]
+        data.loc[timeouts, 'response'] = toresponse[0]
+        data.loc[timeouts, 'error'] = np.nan
+        
+    if exclude_to:
+        data.dropna(inplace=True)
     
     # copy so that not the full dataframe is kept in memory, because the 
     # returned object is otherwise only a reference to the full dataframe

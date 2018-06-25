@@ -153,9 +153,9 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 
 
 #%%
-data = helpers.load_subject(19)
+data = helpers.load_subject(19, exclude_to=False, censor_late=True)
 
-sim, stat, data = create_simulator(data, pars)
+sim, stat, data = create_simulator(data, pars, conditions)
 p = pars.sample(10)
 
 stat.calc(sim.sim(p))
