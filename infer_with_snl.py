@@ -123,9 +123,21 @@ class Stats(object):
             return np.r_[correct.mean(), 
                          np.percentile(data[:, 1], self.percentiles)]
             
+
+class Stats_id(object):
+    """
+    Summary statistics for RT-models with easy and hard trials.
+    """
+
+    def __init__(self, model, pars, easy):
+        pass
+    
+    def calc(self, data):
+        return np.array(data)
+    
             
 #%% function returning simulator and summary stats for a given subject
-def create_simulator(data, pars):
+def create_simulator(data, pars, conditions):
     # first of these indicates clockwise rotation, second anti-clockwise
     choices = [1, -1]
     
@@ -135,7 +147,12 @@ def create_simulator(data, pars):
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
         choices=choices)
     
-    return Simulator(model, pars), Stats(model, pars, data['easy']), data
+    if conditions is None:
+        stats = Stats(model, pars, data['easy'])
+    else:
+        stats = Stats_id(model, pars, data['easy'])
+    
+    return Simulator(model, pars), stats, data
 
 
 #%% define parameters and their prior
@@ -155,6 +172,9 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 #%%
 data = helpers.load_subject(19, exclude_to=False, censor_late=True)
 
+# set to None for RT quantile summary stats, else set to data['easy']
+conditions = None
+
 sim, stat, data = create_simulator(data, pars, conditions)
 p = pars.sample(10)
 
@@ -165,7 +185,9 @@ obs_xs = stat.calc(data[['response', 'RT']])
 
 #%%
 startt = datetime.now()
-all_ps, all_xs, lik = snl.run_snl(obs_xs, sim, stat, prior)
+all_ps, all_xs, lik = snl.run_snl(obs_xs, sim, stat, prior, 
+                                  conditions=conditions,
+                                  minibatch=100)
 endt = datetime.now()
 
 print('elapsed time: ' + (endt - startt).__str__())
