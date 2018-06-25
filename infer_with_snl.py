@@ -6,8 +6,8 @@ Created on Tue Jun 19 16:00:24 2018
 @author: bitzer
 """
 #%% imports
-from datetime import datetime
 import numpy as np
+import pandas as pd
 
 import helpers
 from rtmodels import rtmodel
@@ -184,41 +184,57 @@ obs_xs = stat.calc(data[['response', 'RT']])
 
 
 #%%
-startt = datetime.now()
-all_ps, all_xs, lik = snl.run_snl(obs_xs, sim, stat, prior, 
-                                  conditions=conditions,
-                                  minibatch=100)
-endt = datetime.now()
+fbase = 'test'
+snl.run_snl(obs_xs, sim, stat, prior, filebase=fbase, conditions=conditions)
 
-print('elapsed time: ' + (endt - startt).__str__())
+# load stored results
+with pd.HDFStore(fbase + '.h5', 'r') as store:
+    psamples = store['parameters']
+    xsamples = store['simdata']
+    logdens = store['logdens']
+    trainlog = store['trainlog']
+    
+    print('elapsed: %s' % store['elapsed'].loc['elapsed'])
+
+R = trainlog.index.get_level_values('round').unique().size
 
 
-#%% 
+#%% plot some training diagnostics 
 import matplotlib.pyplot as plt
+fig, axes = plt.subplots(1, 2)
 
+for dens, ax in zip(logdens.columns, axes):
+    ax.plot(logdens[dens].values)
+    ax.set_ylabel(dens)
+    ax.set_xlabel('sample')
+    
+    
 fig, ax = plt.subplots()
-ax.boxplot(all_xs[-1])
+ax.plot(trainlog.val_loss.values)
+ax.set_xlabel('epoch')
+ax.set_ylabel('validation loss')
+
+
+#%% posterior parameters
+pars.plot_param_hist(psamples.loc[R].values)
+
+
+#%% check fit to summary statistics for samples in last round
+fig, ax = plt.subplots()
+ax.boxplot(xsamples.loc[R].values)
 ax.plot(np.arange(obs_xs.size) + 1, obs_xs, '*', color='C0')
-
-
-#%%
-import seaborn as sns
-
-ptr = pars.transform(all_ps[-1])
-
-sns.jointplot(ptr[:, 1], ptr[:, 2])
 
 
 #%% posterior predictive check of complete distribution
 # use only median to predict
 #pars_post = np.tile(np.median(all_ps[-1], axis=0)[None, :], (1000, 1))
 # use full posterior
-pars_post = all_ps[-1]
+pars_post = psamples.loc[R]
 
 resp = sim.sim(pars_post)
 
-choices_post = resp[:, 0].reshape(sim.model.L, all_ps[-1].shape[0], order='F')
-rts_post = resp[:, 1].reshape(sim.model.L, all_ps[-1].shape[0], order='F')
+choices_post = resp[:, 0].reshape(sim.model.L, pars_post.shape[0], order='F')
+rts_post = resp[:, 1].reshape(sim.model.L, pars_post.shape[0], order='F')
 
 rtfig, rtaxes = plt.subplots(2, 3, sharex=True, sharey=True, figsize=(10, 5))
 
