@@ -57,12 +57,12 @@ class Simulator(object):
     
 
 #%% define the summary statistics
-class Stats(object):
+class Stats_quant(object):
     """
     Summary statistics for RT-models with easy and hard trials.
     """
 
-    def __init__(self, model, pars, easy, percentiles=np.linspace(5, 95, 7),
+    def __init__(self, model, pars, easy, percentiles=np.linspace(1, 99, 8),
                  exclude_to=True):
 
         if isinstance(model, rtmodel):
@@ -118,10 +118,104 @@ class Stats(object):
             data = data[ind, :]
             
         if correct.size == 0:
-            return np.r_[0.5, 10.0 * np.ones(7)]
+            accuracy = 0
         else:
-            return np.r_[correct.mean(), 
-                         np.percentile(data[:, 1], self.percentiles)]
+            accuracy = correct.mean()
+            
+        if self.exclude_to:
+            return np.r_[accuracy, np.percentile(data[:, 1], self.percentiles)]
+        else:
+            return np.r_[accuracy, np.percentile(data[:, 1], self.percentiles),
+                         (data[:, 0] == self.model.toresponse[0]).mean()]
+            
+
+class Stats_hist(object):
+    """
+    Summary statistics for RT-models with easy and hard trials.
+    """
+
+    def __init__(self, model, pars, easy, bins=7, rts=None, 
+                 exclude_to=False):
+
+        if isinstance(model, rtmodel):
+            self.model = model
+        else:
+            raise TypeError("Simulator is only defined for rtmodel!")
+        
+        if isinstance(pars, parameters.parameter_container):
+            self.pars = pars
+        else:
+            raise TypeError(
+                    "Simulator is only defined for parameter_container!")
+        
+        if easy.dtype == np.bool and easy.ndim == 1 and easy.size == model.L:
+            self.easy = easy
+        else:
+            raise TypeError(
+                    "easy must be a 1D boolean array of length model.L")
+        
+        if np.isscalar(bins):
+            B = bins // 2 + 1
+            
+            median = np.median(rts)
+            
+            bins = np.r_[
+                    median - np.exp(np.arange(B, 0, -1) + np.log(median) - B),
+                    median + np.exp(np.arange(B) + 1 
+                                    + np.log(model.maxrt - median) - B)]
+            
+            # prevent numerical errors in assertion statement below
+            bins[-1] -= 1e-15
+        
+        assert bins.ndim == 1 and bins[0] >= 0 and bins[-1] <= model.maxrt
+        
+        if not exclude_to:
+            bins = np.r_[bins, self.model.toresponse[1]]
+        
+        self.exclude_to = exclude_to
+        
+        self.bins = bins
+        self.B = bins.size - 1
+
+    
+    def calc(self, data):
+
+        if data is None:
+            return None
+
+        data = np.asarray(data)
+
+        assert data.shape[0] % self.model.L == 0
+
+        n_sims = data.shape[0] // self.model.L
+
+        stats = []
+        for sim in range(n_sims):
+            data1 = data[sim * self.model.L : (sim + 1) * self.model.L, :]
+            
+            stats.append(
+                    np.r_[self.get_summary_stats(data1, self.easy),
+                          self.get_summary_stats(data1, ~self.easy)][None, :])
+            
+        return np.concatenate(stats) if n_sims > 1 else stats[0][0]
+    
+            
+    def get_summary_stats(self, data, cond):
+        data = data[cond, :]
+        correct = self.model.correct[cond] == data[:, 0]
+        
+        if self.exclude_to:
+            ind = data[:, 0] != 0
+            correct = correct[ind]
+            data = data[ind, :]
+            
+        dens, _ = np.histogram(data[:, 1], self.bins, density=True)
+        if correct.size == 0:
+            accuracy = 0
+        else:
+            accuracy = correct.mean()
+            
+        return np.r_[accuracy, dens]
             
 
 class Stats_id(object):
@@ -137,7 +231,7 @@ class Stats_id(object):
     
             
 #%% function returning simulator and summary stats for a given subject
-def create_simulator(data, pars, conditions):
+def create_simulator(data, pars, stats='hist', exclude_to=False):
     # first of these indicates clockwise rotation, second anti-clockwise
     choices = [1, -1]
     
@@ -147,10 +241,15 @@ def create_simulator(data, pars, conditions):
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
         choices=choices)
     
-    if conditions is None:
-        stats = Stats(model, pars, data['easy'])
-    else:
+    if stats == 'hist':
+        stats = Stats_hist(model, pars, data['easy'], rts=data.RT, 
+                           exclude_to=exclude_to)
+    elif stats == 'quant':
+        stats = Stats_quant(model, pars, data['easy'], exclude_to=exclude_to)
+    elif stats == 'id':
         stats = Stats_id(model, pars, data['easy'])
+    else:
+        raise ValueError('Unknown type of summary statistics!')
     
     return Simulator(model, pars), stats, data
 
@@ -170,12 +269,18 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 
 
 #%%
-data = helpers.load_subject(19, exclude_to=False, censor_late=True)
+sub = 19
+censor_late = True
+exclude_to = False
+data = helpers.load_subject(sub, exclude_to=exclude_to, censor_late=censor_late)
 
-# set to None for RT quantile summary stats, else set to data['easy']
-conditions = None
+stats = 'quant'
+if stats == 'id':
+    conditions = data.easy
+else:
+    conditions = None
 
-sim, stat, data = create_simulator(data, pars, conditions)
+sim, stat, data = create_simulator(data, pars, stats, exclude_to)
 p = pars.sample(10)
 
 stat.calc(sim.sim(p))
@@ -184,11 +289,24 @@ obs_xs = stat.calc(data[['response', 'RT']])
 
 
 #%%
-fbase = 'test'
+fbase = 'test_' + stats
 snl.run_snl(obs_xs, sim, stat, prior, filebase=fbase, conditions=conditions)
 
-# load stored results
-with pd.HDFStore(fbase + '.h5', 'r') as store:
+with pd.HDFStore(fbase + '.h5', 'r+') as store:
+    # save extra information about this result
+    store['prior_mu'] = pd.Series(pars.mu, pars.names)
+    store['prior_cov'] = pd.DataFrame(pars.cov, columns=pars.names, 
+                                      index=pars.names)
+    store['data_info'] = pd.Series(
+            [sub, censor_late, exclude_to], 
+            index=['subject', 'censor_late', 'exclude_to'])
+    store['stats'] = pd.Series(stats)
+    if stats == 'hist':
+        store['stats_opt'] = pd.Series(stat.bins)
+    elif stats == 'quant':
+        store['stats_opt'] = pd.Series(stat.percentiles)
+    
+    # load stored results
     psamples = store['parameters']
     xsamples = store['simdata']
     logdens = store['logdens']
