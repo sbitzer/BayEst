@@ -463,15 +463,21 @@ class rotated_directions(rtmodel):
         # sample from decision time distribution
         if mean is None:
             ndtloc = self.ndtloc
+            ndtspread = self.ndtspread
             self.ndtloc = -30
+            self.ndtspread = 0
             choices, rts = self.gen_response(np.arange(self.L), rep=R)
             self.ndtloc = ndtloc
+            self.ndtspread = ndtspread
         else:
             ndtloc = params[:, inds[0]].copy()
+            ndtspread = params[:, inds[1]].copy()
             params[:, inds[0]] = -30
+            params[:, inds[1]] = 0
             choices, rts = self.gen_response_with_params(
                     np.tile(np.arange(self.L), R), params, pars.names)
             params[:, inds[0]] = ndtloc
+            params[:, inds[1]] = ndtspread
             
         self.plot_response_distribution(choices, rts, ax=ax)
         
