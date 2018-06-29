@@ -333,8 +333,27 @@ ax.set_xlabel('epoch')
 ax.set_ylabel('validation loss')
 
 
+#%% stats for posterior parameters
+ptr = pd.DataFrame(pars.transform(psamples.loc[R].values), 
+                   columns=psamples.columns)
+print(ptr[['noisestd', 'intstd', 'bound', 'ndtmean']].describe([0.05, 0.5, 0.95]))
+
+
 #%% posterior parameters
-pars.plot_param_hist(psamples.loc[R].values)
+pg = pars.plot_param_hist(psamples.loc[R].values)
+
+# ignore correlations and estimate most likely marginal posterior values
+def get_mode(a):
+    cnt, bins = np.histogram(a, 'auto')
+    ind = cnt.argmax()
+    return bins[ind:ind+2].mean()
+
+modes = np.array([get_mode(psamples.loc[R, name]) for name in pars.names])
+modes_tr = pd.Series(pars.transform(modes[None, :])[0], index=psamples.columns)
+
+for ax, mode, median in zip(pg.diag_axes, modes_tr, ptr.median()):
+    ax.plot(mode, 0.1 * ax.get_ylim()[1], '*k')
+    ax.plot(median, 0.05 * ax.get_ylim()[1], '*g')
 
 
 #%% check fit to summary statistics for samples in last round
@@ -370,3 +389,8 @@ for row, rtdists in zip(rtaxes, ((
 rtaxes[0, 0].set_title('all trials')
 rtaxes[0, 1].set_title('easy trials')
 rtaxes[0, 2].set_title('hard trials')
+
+
+#%% compare dt and ndt distributions for most likely posterior parameters
+sim.model.plot_dt_ndt_distributions(modes, np.eye(modes.size) * 1e-10, pars)
+
