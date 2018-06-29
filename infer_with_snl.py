@@ -262,7 +262,7 @@ ndtdist = 'uniform'
 
 pars = parameters.parameter_container()
 pars.add_param('noisestd', 0, 1.2, exponential())
-pars.add_param('intstd', 0, 1.2, exponential())
+#pars.add_param('intstd', 0, 1.2, exponential())
 pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 pars.add_param('bias', 0, .2, gaussprob())
 pars.add_param('ndtloc', -2, 1)
@@ -340,7 +340,9 @@ ax.set_ylabel('validation loss')
 #%% stats for posterior parameters
 ptr = pd.DataFrame(pars.transform(psamples.loc[R].values), 
                    columns=psamples.columns)
-print(ptr[['noisestd', 'intstd', 'bound', 'ndtloc']].describe([0.05, 0.5, 0.95]))
+pnames = sorted(list(set(pars.names).intersection(set(
+        ['noisestd', 'intstd', 'bound', 'ndtloc', 'lapseprob']))))
+print(ptr[pnames].describe([0.05, 0.5, 0.95]))
 
 
 #%% posterior parameters
@@ -398,3 +400,9 @@ rtaxes[0, 2].set_title('hard trials')
 #%% compare dt and ndt distributions for most likely posterior parameters
 sim.model.plot_dt_ndt_distributions(modes, np.eye(modes.size) * 1e-10, pars)
 
+
+#%% 
+for name, mode in modes_tr.iteritems():
+    setattr(sim.model, name, mode)
+    
+sim.model.plot_example_timecourses(np.arange(100))
