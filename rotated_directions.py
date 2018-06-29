@@ -395,9 +395,13 @@ class rotated_directions(rtmodel):
             logprob[:, :, i] = (logpost[:, :, i] 
                                 - logsumexp_2d(logpost[:, :, i], axis=1))
             
+            lp_cw = (logsumexp_2d(logprob[:, cw, i], axis=1) 
+                     + np.log(self.bias))
+            lp_acw = (logsumexp_2d(logprob[:, acw, i], axis=1)
+                      + np.log(1 - self.bias))
+            
             logprob_cw[:, i] = (
-                    logsumexp_2d(logprob[:, cw, i], axis=1) 
-                    - logsumexp_2d(logprob[:, cw | acw, i], axis=1))[:, 0]
+                    lp_cw - logsumexp_2d(np.c_[lp_cw, lp_acw], axis=1))[:, 0]
             
         return times, logprob_cw, logprob, logpost, logliks
     
