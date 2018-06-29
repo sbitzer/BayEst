@@ -206,7 +206,7 @@ class rotated_directions(rtmodel):
             return int(math.ceil(self.maxrt / self.dt)) + 1
     
     parnames = ['bound', 'bstretch', 'bshape', 'noisestd', 'intstd', 'prior', 
-                'bias', 'ndtmean', 'ndtspread', 'lapseprob', 'lapsetoprob']
+                'bias', 'ndtloc', 'ndtspread', 'lapseprob', 'lapsetoprob']
 
     @property
     def prior(self):
@@ -236,8 +236,8 @@ class rotated_directions(rtmodel):
     
     def __init__(self, Trials, dt=1, directions=8, criteria=0, prior=None, 
                  bias=0.5, noisestd=1, intstd=1, bound=0.8, bstretch=0, 
-                 bshape=1.4, ndtmean=-12, ndtspread=0, lapseprob=0.05,
-                 lapsetoprob=0.1, **rtmodel_args):
+                 bshape=1.4, ndtloc=-12, ndtspread=0, lapseprob=0.05,
+                 lapsetoprob=0.1, ndtdist='lognormal', **rtmodel_args):
         super(rotated_directions, self).__init__(**rtmodel_args)
             
         self._during_init = True
@@ -287,8 +287,11 @@ class rotated_directions(rtmodel):
         # Shape parameter of the collapsing bound, see boundfun
         self.bshape = bshape
             
-        # Mean of nondecision time.
-        self.ndtmean = ndtmean
+        # which ndt distribution to use?
+        self.ndtdist = ndtdist
+        
+        # location of nondecision time distribution
+        self.ndtloc = ndtloc
             
         # Spread of nondecision time.
         self.ndtspread = ndtspread
@@ -318,7 +321,8 @@ class rotated_directions(rtmodel):
         info += 'bshape       : %7.2f' % self.bshape + '\n'
         info += 'noisestd     : %6.1f' % self.noisestd + '\n'
         info += 'intstd       : %6.1f' % self.intstd + '\n'
-        info += 'ndtmean      : %7.2f' % self.ndtmean + '\n'
+        info += 'ndtdist      : %s'    % self.ndtdist + '\n'
+        info += 'ndtloc       : %7.2f' % self.ndtloc + '\n'
         info += 'ndtspread    : %7.2f' % self.ndtspread + '\n'
         info += 'lapseprob    : %7.2f' % self.lapseprob + '\n'
         info += 'lapsetoprob  : %7.2f' % self.lapsetoprob + '\n'
@@ -444,31 +448,39 @@ class rotated_directions(rtmodel):
         if mean is not None:
             params = pars.sample_transformed(self.L * R, mean, cov)
             
-            inds = [pars.names[pars.names == 'ndtmean'].index.values[0],
+            inds = [pars.names[pars.names == 'ndtloc'].index.values[0],
                     pars.names[pars.names == 'ndtspread'].index.values[0]]
         
         # sample from decision time distribution
         if mean is None:
-            ndtmean = self.ndtmean
-            self.ndtmean = -30
+            ndtloc = self.ndtloc
+            self.ndtloc = -30
             choices, rts = self.gen_response(np.arange(self.L), rep=R)
-            self.ndtmean = ndtmean
+            self.ndtloc = ndtloc
         else:
-            ndtmean = params[:, inds[0]].copy()
+            ndtloc = params[:, inds[0]].copy()
             params[:, inds[0]] = -30
             choices, rts = self.gen_response_with_params(
                     np.tile(np.arange(self.L), R), params, pars.names)
-            params[:, inds[0]] = ndtmean
+            params[:, inds[0]] = ndtloc
             
         self.plot_response_distribution(choices, rts, ax=ax)
         
         # sample from non-decision time distribution
         if mean is None:
-            rts = np.random.lognormal(self.ndtmean, self.ndtspread, 
-                                      self.L * R)
+            if self.ndtdist == 'lognormal':
+                rts = np.random.lognormal(self.ndtloc, self.ndtspread, 
+                                          self.L * R)
+            elif self.ndtdist == 'uniform':
+                rts = (np.random.rand(self.L * R) * self.ndtspread
+                       + np.exp(self.ndtloc))
         else:
-            rts = np.array([np.random.lognormal(mu, sig) 
-                            for (mu, sig) in params[:, inds]])
+            if self.ndtdist == 'lognormal':
+                rts = np.array([np.random.lognormal(mu, sig) 
+                                for (mu, sig) in params[:, inds]])
+            elif self.ndtdist == 'uniform':
+                rts = (np.random.rand(params.shape[0]) * params[:, inds[1]]
+                       + np.exp(params[:, inds[0]]))
             
         choices = self.choices[np.zeros(self.L * R, dtype=int)]
         
@@ -624,9 +636,8 @@ class rotated_directions(rtmodel):
                 features = np.tile(features, (self.S, 1))
                 
             # call the compiled function
-            choices, rts = self.gen_response_jitted(features, allpars, 
-                                                    self.criteria[trind],
-                                                    changing_bound)
+            choices, rts = self.gen_response_jitted(
+                    features, allpars, self.criteria[trind], changing_bound)
                 
             # transform choices to those expected by user, if necessary
             if user_code:
@@ -648,16 +659,17 @@ class rotated_directions(rtmodel):
                 self.choices, self.dt, self.directions, criteria, 
                 allpars['prior'], allpars['bias'], allpars['noisestd'], 
                 allpars['intstd'], allpars['bound'], allpars['bstretch'], 
-                allpars['bshape'], allpars['ndtmean'], allpars['ndtspread'], 
-                allpars['lapseprob'], allpars['lapsetoprob'], changing_bound)
+                allpars['bshape'], allpars['ndtloc'], allpars['ndtspread'], 
+                allpars['lapseprob'], allpars['lapsetoprob'], changing_bound,
+                0 if self.ndtdist == 'lognormal' else 1)
             
         return choices, rts
 
 @jit(nopython=True, parallel=True)
 def gen_response_jitted_dir(
         features, maxrt, toresponse, choices, dt, directions, criteria,
-        prior, bias, noisestd, intstd, bound, bstretch, bshape, ndtmean, 
-        ndtspread, lapseprob, lapsetoprob, changing_bound):
+        prior, bias, noisestd, intstd, bound, bstretch, bshape, ndtloc, 
+        ndtspread, lapseprob, lapsetoprob, changing_bound, ndtdist):
     
     D = len(directions)
     C = len(choices)
@@ -726,9 +738,14 @@ def gen_response_jitted_dir(
                 lp_rot -= logsumexp(lp_rot)
                 
                 if lp_rot[0] >= boundval or lp_rot[1] >= boundval:
+                    if ndtdist == 0:
+                        ndt = random.lognormvariate(ndtloc[tr], ndtspread[tr])
+                    else:
+                        ndt = (random.random() * ndtspread[tr]
+                               + math.exp(ndtloc[tr]))
+                        
                     # add 1 to t because t starts from 0
-                    rts[tr] = (t+1) * dt + random.lognormvariate(
-                        ndtmean[tr], ndtspread[tr])
+                    rts[tr] = (t+1) * dt + ndt
                     
                     if lp_rot[0] >= boundval:
                         choices_out[tr] = 0

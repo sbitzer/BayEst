@@ -17,6 +17,8 @@ import snl
 import pyEPABC.parameters as parameters
 from pyEPABC.parameters import exponential, gaussprob
 
+import matplotlib.pyplot as plt
+
 
 #%% define the simulator needed in SNL
 class Simulator(object):
@@ -231,7 +233,8 @@ class Stats_id(object):
     
             
 #%% function returning simulator and summary stats for a given subject
-def create_simulator(data, pars, stats='hist', exclude_to=False):
+def create_simulator(data, pars, stats='hist', exclude_to=False, 
+                     ndtdist='lognorm'):
     # first of these indicates clockwise rotation, second anti-clockwise
     choices = [1, -1]
     
@@ -239,7 +242,7 @@ def create_simulator(data, pars, stats='hist', exclude_to=False):
         data.tarDir / 180. * np.pi, helpers.dt, 
         data.tarDir.unique() / 180. * np.pi, data.critDir / 180. * np.pi, 
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
-        choices=choices)
+        choices=choices, ndtdist=ndtdist)
     
     if stats == 'hist':
         stats = Stats_hist(model, pars, data['easy'], rts=data.RT, 
@@ -255,12 +258,14 @@ def create_simulator(data, pars, stats='hist', exclude_to=False):
 
 
 #%% define parameters and their prior
+ndtdist = 'uniform'    
+
 pars = parameters.parameter_container()
 pars.add_param('noisestd', 0, 1.2, exponential())
 pars.add_param('intstd', 0, 1.2, exponential())
 pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 pars.add_param('bias', 0, .2, gaussprob())
-pars.add_param('ndtmean', -2, 1)
+pars.add_param('ndtloc', -2, 1)
 pars.add_param('ndtspread', np.log(0.2), 1, exponential())
 pars.add_param('lapseprob', -1.65, 1, gaussprob()) # median approx at 0.05
 pars.add_param('lapsetoprob', 0, 1, gaussprob())
@@ -280,7 +285,7 @@ if stats == 'id':
 else:
     conditions = None
 
-sim, stat, data = create_simulator(data, pars, stats, exclude_to)
+sim, stat, data = create_simulator(data, pars, stats, exclude_to, ndtdist)
 p = pars.sample(10)
 
 stat.calc(sim.sim(p))
@@ -318,7 +323,6 @@ R = trainlog.index.get_level_values('round').unique().size
 
 
 #%% plot some training diagnostics 
-import matplotlib.pyplot as plt
 fig, axes = plt.subplots(1, 2)
 
 for dens, ax in zip(logdens.columns, axes):
@@ -336,7 +340,7 @@ ax.set_ylabel('validation loss')
 #%% stats for posterior parameters
 ptr = pd.DataFrame(pars.transform(psamples.loc[R].values), 
                    columns=psamples.columns)
-print(ptr[['noisestd', 'intstd', 'bound', 'ndtmean']].describe([0.05, 0.5, 0.95]))
+print(ptr[['noisestd', 'intstd', 'bound', 'ndtloc']].describe([0.05, 0.5, 0.95]))
 
 
 #%% posterior parameters
