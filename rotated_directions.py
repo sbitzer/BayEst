@@ -406,7 +406,7 @@ class rotated_directions(rtmodel):
         return times, logprob_cw, logprob, logpost, logliks
     
     
-    def plot_example_timecourses(self, trind, dvtype='prob'):
+    def plot_example_timecourses(self, trind, dvtype='prob', with_bound=True):
         times, logprob_cw, logprob, logpost, logliks = self.gen_timecourses(
                 trind)
         
@@ -429,7 +429,12 @@ class rotated_directions(rtmodel):
                 lines = ax.plot(times, dv[:, ind], 
                                 color=cols[c], alpha=.3)
                 lines[0].set_label(labels[c])
-            
+        
+        if with_bound:
+            line, = ax.plot(times, np.ones_like(times) * self.bound, 'k')
+            line, = ax.plot(times, np.ones_like(times) - self.bound, 'k')
+            line.set_label('bounds')
+        
         ax.legend(loc='upper left')
         ax.set_xlabel('time (s)')
         if dvtype == 'prob':
