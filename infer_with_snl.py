@@ -64,7 +64,7 @@ class Stats_quant(object):
     Summary statistics for RT-models with easy and hard trials.
     """
 
-    def __init__(self, model, pars, easy, percentiles=np.linspace(1, 99, 8),
+    def __init__(self, model, pars, easy, percentiles=np.linspace(1, 99, 5),
                  exclude_to=True):
 
         if isinstance(model, rtmodel):
@@ -124,10 +124,22 @@ class Stats_quant(object):
         else:
             accuracy = correct.mean()
             
-        if self.exclude_to:
-            return np.r_[accuracy, np.percentile(data[:, 1], self.percentiles)]
+        cw = data[:, 0] == self.model.choices[0]
+        acw = data[:, 0] == self.model.choices[1]
+        
+        if np.any(cw):
+            cw_perc = np.percentile(data[cw, 1], self.percentiles)
         else:
-            return np.r_[accuracy, np.percentile(data[:, 1], self.percentiles),
+            cw_perc = np.zeros(self.percentiles.size, float)
+        if np.any(acw):
+            acw_perc = np.percentile(data[acw, 1], self.percentiles)
+        else:
+            acw_perc = np.zeros(self.percentiles.size, float)
+        
+        if self.exclude_to:
+            return np.r_[accuracy, cw_perc, acw_perc]
+        else:
+            return np.r_[accuracy, cw_perc, acw_perc,
                          (data[:, 0] == self.model.toresponse[0]).mean()]
             
 
@@ -242,7 +254,7 @@ def create_simulator(data, pars, stats='hist', exclude_to=False,
         data.tarDir / 180. * np.pi, helpers.dt, 
         data.tarDir.unique() / 180. * np.pi, data.critDir / 180. * np.pi, 
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
-        choices=choices, ndtdist=ndtdist)
+        choices=choices, ndtdist=ndtdist, intstd=0.4)
     
     if stats == 'hist':
         stats = Stats_hist(model, pars, data['easy'], rts=data.RT, 
