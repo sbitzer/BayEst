@@ -148,7 +148,7 @@ class Stats_hist(object):
     Summary statistics for RT-models with easy and hard trials.
     """
 
-    def __init__(self, model, pars, easy, bins=7, rts=None, 
+    def __init__(self, model, pars, easy, binq=5, rts=None, 
                  exclude_to=False):
 
         if isinstance(model, rtmodel):
@@ -168,23 +168,25 @@ class Stats_hist(object):
             raise TypeError(
                     "easy must be a 1D boolean array of length model.L")
         
-        if np.isscalar(bins):
-            B = bins // 2 + 1
+        if rts is None:
+            if np.isscalar(binq):
+                bins = np.linspace(0, helpers.maxrt, binq)
+            else:
+                assert np.all((binq <= helpers.maxrt) & (binq >= 0))
+                bins = binq
+        else:
+            if np.isscalar(binq):
+                # gives np.linspace(10, 90, 5) for binq=5
+                offset = -50 / binq + 10
+                binq = np.linspace(10 - offset, 90 + offset, binq)
             
-            median = np.median(rts)
+            assert np.all((binq < 100) & (binq > 0))
+            bins = np.r_[0, np.percentile(rts, binq), helpers.maxrt]
             
-            bins = np.r_[
-                    median - np.exp(np.arange(B, 0, -1) + np.log(median) - B),
-                    median + np.exp(np.arange(B) + 1 
-                                    + np.log(model.maxrt - median) - B)]
-            
-            # prevent numerical errors in assertion statement below
-            bins[-1] -= 1e-15
+        # prevent numerical errors in assertion statement below
+        bins[-1] -= 1e-15
         
         assert bins.ndim == 1 and bins[0] >= 0 and bins[-1] <= model.maxrt
-        
-        if not exclude_to:
-            bins = np.r_[bins, self.model.toresponse[1]]
         
         self.exclude_to = exclude_to
         
@@ -216,20 +218,24 @@ class Stats_hist(object):
             
     def get_summary_stats(self, data, cond):
         data = data[cond, :]
-        correct = self.model.correct[cond] == data[:, 0]
         
         if self.exclude_to:
-            ind = data[:, 0] != 0
-            correct = correct[ind]
+            ind = data[:, 0] != helpers.toresponse[0]
             data = data[ind, :]
-            
-        dens, _ = np.histogram(data[:, 1], self.bins, density=True)
-        if correct.size == 0:
-            accuracy = 0
-        else:
-            accuracy = correct.mean()
-            
-        return np.r_[accuracy, dens]
+        
+        # define as float so that you get float division below
+        N = float(data.shape[0])
+        
+        # note that this counts time outs with ind=bins.size
+        binind = np.digitize(data[:, 1], self.bins)
+        
+        B = self.B
+        if not self.exclude_to:
+            B += 1
+        
+        return np.array(
+                [(data[binind == bi, 0] == self.model.choices[0]).sum() / N
+                 for bi in range(1, B+1)])
             
 
 class Stats_id(object):
@@ -291,7 +297,7 @@ censor_late = True
 exclude_to = False
 data = helpers.load_subject(sub, exclude_to=exclude_to, censor_late=censor_late)
 
-stats = 'quant'
+stats = 'hist'
 if stats == 'id':
     conditions = data.easy
 else:
