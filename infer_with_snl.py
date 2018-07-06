@@ -260,7 +260,7 @@ def create_simulator(data, pars, stats='hist', exclude_to=False,
         data.tarDir / 180. * np.pi, helpers.dt, 
         data.tarDir.unique() / 180. * np.pi, data.critDir / 180. * np.pi, 
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
-        choices=choices, ndtdist=ndtdist, intstd=0.4)
+        choices=choices, ndtdist=ndtdist, intstd=0.4, bound=0.8)
     
     if stats == 'hist':
         stats = Stats_hist(model, pars, data['easy'], rts=data.RT, 
@@ -280,8 +280,8 @@ ndtdist = 'uniform'
 
 pars = parameters.parameter_container()
 pars.add_param('noisestd', 0, 1.2, exponential())
-#pars.add_param('intstd', 0, 1.2, exponential())
-pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
+pars.add_param('intstd', 0, 1.2, exponential())
+#pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 pars.add_param('bias', 0, .2, gaussprob())
 pars.add_param('ndtloc', -2, 1)
 pars.add_param('ndtspread', np.log(0.2), 1, exponential())
@@ -413,6 +413,36 @@ for row, rtdists in zip(rtaxes, ((
 rtaxes[0, 0].set_title('all trials')
 rtaxes[0, 1].set_title('easy trials')
 rtaxes[0, 2].set_title('hard trials')
+
+
+#%% check fit to differences in median RT and accuracy across difficulties
+def differences(ch, rt, easy, correct):
+    if ch.ndim == 1 and rt.ndim == 1:
+        ch = ch[:, None]
+        rt = rt[:, None]
+        
+    if correct.ndim == 1:
+        correct = correct[:, None]
+    
+    ch_corr = ch == correct
+    
+    return (ch_corr[easy, :].mean(axis=0) - ch_corr[~easy, :].mean(axis=0), 
+            np.median(rt[easy, :], axis=0) - np.median(rt[~easy, :], axis=0))
+
+fig, ax = plt.subplots()
+
+diffacc, diffmed = differences(
+        choices_post, rts_post, data.easy, sim.model.correct)
+
+ax.boxplot(np.c_[diffacc, diffmed])
+
+diffacc, diffmed = differences(
+        data.response, data.RT, data.easy, sim.model.correct)
+
+ax.plot(np.r_[1, 2], np.r_[diffacc[0], diffmed[0]], '*', ms=10, color='C0')
+
+ax.set_xticklabels(['accuracy', 'median RT'])
+ax.set_ylabel('difference (easy - hard)')
 
 
 #%% compare dt and ndt distributions for most likely posterior parameters
