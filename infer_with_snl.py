@@ -450,27 +450,14 @@ if len(subjects) == 1:
     
     
     #%% check fit to differences in median RT and accuracy across difficulties
-    def differences(ch, rt, easy, correct):
-        if ch.ndim == 1 and rt.ndim == 1:
-            ch = ch[:, None]
-            rt = rt[:, None]
-            
-        if correct.ndim == 1:
-            correct = correct[:, None]
-        
-        ch_corr = ch == correct
-        
-        return (ch_corr[easy, :].mean(axis=0) - ch_corr[~easy, :].mean(axis=0), 
-                np.median(rt[easy, :], axis=0) - np.median(rt[~easy, :], axis=0))
-    
     fig, ax = plt.subplots()
     
-    diffacc, diffmed = differences(
+    diffacc, diffmed = helpers.diff_diff(
             choices_post, rts_post, data.easy, sim.model.correct)
     
     ax.boxplot(np.c_[diffacc, diffmed])
     
-    diffacc, diffmed = differences(
+    diffacc, diffmed = helpers.diff_diff(
             data.response, data.RT, data.easy, sim.model.correct)
     
     ax.plot(np.r_[1, 2], np.r_[diffacc[0], diffmed[0]], '*', ms=10, color='C0')

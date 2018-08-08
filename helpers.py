@@ -65,3 +65,19 @@ def load_subject(sub, exclude_to=False, censor_late=True):
     # returned object is otherwise only a reference to the full dataframe
     return data[['easy', 'tarDir', 'critDir', 'RT', 'response', 'error']
                 ].copy()
+    
+    
+def diff_diff(ch, rt, easy, correct):
+    """Computes the difference in accuracy and median RT between two 
+       difficulty levels."""
+    if ch.ndim == 1 and rt.ndim == 1:
+        ch = ch[:, None]
+        rt = rt[:, None]
+        
+    if correct.ndim == 1:
+        correct = correct[:, None]
+    
+    ch_corr = ch == correct
+    
+    return (ch_corr[easy, :].mean(axis=0) - ch_corr[~easy, :].mean(axis=0), 
+            np.median(rt[easy, :], axis=0) - np.median(rt[~easy, :], axis=0))
