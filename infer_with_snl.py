@@ -181,7 +181,15 @@ class Stats_hist(object):
                 binq = np.linspace(10 - offset, 90 + offset, binq)
             
             assert np.all((binq < 100) & (binq > 0))
-            bins = np.r_[0, np.percentile(rts, binq), helpers.maxrt]
+            
+            # if there are too many time outs so that the timeout-RT is in the
+            # last bin, exclude time outs from computation of percentiles
+            # this is to keep all bin edges within maxrt
+            perc = np.percentile(rts, binq)
+            if perc[-1] == helpers.toresponse[1]:
+                perc = np.percentile(rts[rts != helpers.toresponse[1]], binq)
+            
+            bins = np.r_[0, perc, helpers.maxrt]
             
         # prevent numerical errors in assertion statement below
         bins[-1] -= 1e-15
