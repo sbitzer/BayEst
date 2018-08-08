@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 
 datadir = "../data/behaviour/Data/raw"
+resultsdir = "../inf_results/behaviour"
 
 dt = 0.05
 maxrt = 2.0
