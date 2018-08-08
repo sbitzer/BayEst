@@ -406,7 +406,11 @@ class rotated_directions(rtmodel):
         return times, logprob_cw, logprob, logpost, logliks
     
     
-    def plot_example_timecourses(self, trind, dvtype='prob', with_bound=True):
+    def plot_example_timecourses(self, trind, dvtype='prob', with_bound=True,
+                                 seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+            
         times, logprob_cw, logprob, logpost, logliks = self.gen_timecourses(
                 trind)
         
@@ -421,6 +425,8 @@ class rotated_directions(rtmodel):
             dv = np.exp(logprob_cw)
         elif dvtype == 'logprob':
             dv = logprob_cw
+        elif dvtype == 'logprobdiff':
+            dv = logprob_cw - np.log(1 - np.exp(logprob_cw))
         
         fig, ax = plt.subplots()
         for c in np.r_[self.toresponse[0], self.choices]:
@@ -431,8 +437,17 @@ class rotated_directions(rtmodel):
                 lines[0].set_label(labels[c])
         
         if with_bound:
-            line, = ax.plot(times, np.ones_like(times) * self.bound, 'k')
-            line, = ax.plot(times, np.ones_like(times) - self.bound, 'k')
+            lower = 1 - self.bound
+            upper = self.bound
+            if dvtype == 'logprob':
+                lower = np.log(lower)
+                upper = np.log(upper)
+            elif dvtype == 'logprobdiff':
+                upper = np.log(upper / (1 - upper))
+                lower = -upper
+                
+            line, = ax.plot(times, np.ones_like(times) * upper, 'k')
+            line, = ax.plot(times, np.ones_like(times) * lower, 'k')
             line.set_label('bounds')
         
         ax.legend(loc='upper left')
@@ -441,6 +456,8 @@ class rotated_directions(rtmodel):
             ax.set_ylabel('probability clockwise rotation')
         elif dvtype == 'logprob':
             ax.set_ylabel('log-probability clockwise rotation')
+        elif dvtype == 'logprobdiff':
+            ax.set_ylabel('log p(clockwise) - log p(anti-clockwise)')
         
         return fig, ax
     
