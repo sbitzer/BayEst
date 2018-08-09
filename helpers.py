@@ -13,7 +13,7 @@ import numpy as np
 datadir = "../data/behaviour/Data/raw"
 resultsdir = "../inf_results/behaviour"
 
-dt = 0.05
+dt = 0.01
 maxrt = 2.0
 choices = dict(left=-1, right=1)
 toresponse = [0, 3.0]

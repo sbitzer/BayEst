@@ -46,7 +46,8 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 
 
 #%%
-subjects = helpers.find_available_subjects()
+#subjects = helpers.find_available_subjects()
+subjects = [19]
 
 censor_late = True
 exclude_to = False
