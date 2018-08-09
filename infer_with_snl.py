@@ -105,8 +105,9 @@ if len(subjects) == 1:
         xsamples = store['simdata']
         logdens = store['logdens']
         trainlog = store['trainlog']
+        elapsed = store['elapsed']
     
-    print('elapsed: %s' % store['elapsed'].loc['elapsed'])
+    print('elapsed: %s' % elapsed.loc['elapsed'])
 
     R = trainlog.index.get_level_values('round').unique().size
 
