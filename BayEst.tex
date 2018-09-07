@@ -5,6 +5,7 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage{gensymb}
+\usepackage{color}
 \author{Sebastian Bitzer}
 \title{Bayesian decision models based on comparing estimated perceptual variables to a criterion}
 \begin{document}
@@ -189,5 +190,88 @@ LP_0^i &= \hat{P}(X = x_i)\\
 LP_{t}^i &= LP_{(t-1)}^i + \Delta t\log\hat{p}(Y_t | X=x_i)
 \end{align}
 as dynamics where $t$ counts the number of time steps.
+
+\subsection{Making decisions about the difference between criterion and motion direction}
+The model described so far assumes that the criterion as divider between alternatives is known with complete certainty. We now want to include uncertainty about the criterion. To do this we redefine decisions from decisions about whether a motion direction falls into a particular region of direction space into decisions about whether the difference between criterion and motion direction is positive or negative. So we restrict ourselves to binary decisions, but allow both motion directions and criterion to vary randomly in the model, i.e., to have uncertainty associated with them.
+
+While we previously had a probabilistic decision model structured as shown in Figure \ref{fig:graphic_models}A, our new probabilistic decision model has structure shown in Figure \ref{fig:graphic_models}B which now includes random variables associated with the criterion and the difference between criterion and motion direction. The idea of that model is that the choice constrains the difference, the difference constrains the criterion and the criterion together with the difference constrains the motion direction. It is also possible to let the motion direction constrain the criterion instead, but I currently don't see any reason why this should lead to different results. So I arbitrarily chose this way now.
+
+\begin{figure}
+    \centering
+    \def\svgwidth{.5\columnwidth}
+    \input{probabilistic_decision_models.pdf_tex}
+    \caption{Graphical representation of probabilistic decision models. Random variables: C - choice, M - 'true' motion direction, O$^M$ - observed motion direction, D - difference, R - 'true' criterion, O$^R$ - observed criterion}
+    \label{fig:graphic_models}
+\end{figure}
+
+The full probabilistic model is then given by the joint distribution:
+\begin{equation}\label{eq:joint_diff}
+p(C, D, R, M, O^R, O^M) = P(C)p(D | C)p(R | D)p(O^R | R)p(M | D, R)p(O^M | M)
+\end{equation}
+
+with the following factors:
+\begin{align}
+&P(C = c_-) = 1 - P(C = c_+) = \beta\\
+&p(D | C=c_+) \propto \mathcal{HN}(D | \sigma_D^2)\\
+&p(D | C=c_-) \propto \mathcal{HN}(-D | \sigma_D^2)\\
+&p(R | D) = \mathcal{M}(R | 0, 0)\\
+&p(O^R | R) = \mathcal{M}(O^R | R, \kappa_{R})\\
+&p(M | D, R) = \delta(M = D + R)\\
+&p(O^M | M) = \mathcal{M}(O^M | M, \kappa_{M})
+\end{align}
+where $c_+$ denotes an anti-clockwise choice and $c_-$ a clockwise choice and the difference $D$ is defined to be $D = M - R$. The distribution of the difference is chosen to be proportional to a half-normal distribution with variance $\sigma_D^2$. This can only be proportional, because the difference is only defined on an open interval up to 180 degrees in both directions ($D \in (-180, 180)$). The choice of a half normal will favour differences that are close to 0 meaning that a subject expects hard decisions, but this can be relaxed by choosing large $\sigma_D^2$. The von Mises distribution for $R$ with mean=0 and $\kappa=0$ states that the value of the difference does not constrain the criterion at all, i.e., all criterion values are equally likely for any given value of difference. That's because the difference is only defined by both the criterion and the motion direction. Once a difference value and a criterion value are known, the value of the motion direction is uniquely determined by $M = D + R$, hence I define the conditional distribution over motion directions as a Dirac delta. The observation distribution for the criterion (over $O^R$) is a von Mises distribution centred at the true value $R$ with precision $\kappa_R$. I define the observation distribution for motion directions analogously.
+
+\subsubsection{Inference in the difference model}
+Eventually we want to know with what probability a given choice is correct given the observations:
+\begin{equation}\label{eq:post_diff}
+P(C | O^R, O^M) = \frac{p(C, O^R, O^M)}{p(C=c_+, O^R, O^M) + p(C=c_-, O^R, O^M)}
+\end{equation}
+So the crucial quantity is the marginalised distribution
+\begin{equation}
+p(C, O^R, O^M) = \iiint p(C, D, R, M, O^R, O^M) dD dR dM
+\end{equation}
+By plugging in the definition of the joint distribution of Eq. \eqref{eq:joint_diff} and using the definition of the Dirac delta together with integration, we get
+\begin{equation}
+p(C, O^R, O^M) = P(C) \iint p(D | C) p(R | D) p(O^R | R) p(O^M | M = D + R) dR dD
+\end{equation}
+Because I defined $p(R | D)$ as a uniform distribution, I can pull it out of the integrals as a constant $p(R | D) = c_R$ which will cancel in Eq. \eqref{eq:post_diff}
+\begin{equation}
+p(C, O^R, O^M) = c_R P(C) \int p(D | C) \int p(O^R | R) p(O^M | M = D + R) dR dD.
+\end{equation}
+This means, assuming that there is only a single observation of the criterion $O^R$ which is fixed throughout a trial, we still need to integrate over both criterion values and differences to update our beliefs about the correct choice. In the model with fixed criterion above we only had to integrate over one variable (the underlying motion direction). So the procedure here is considerably more costly as for each possible value of the difference we need to integrate over all values of the criterion.
+
+\subsubsection{Implementation / Discretisation}
+As I cannot analytically solve the integrals above, I have to resort to discretisation of criterion and difference values to do the integration numerically. The most parsimonious discretisation uses the true criterion and difference values of the experiment, because the experiment was designed to have only 4 difference values, i.e., for each shown criterion the participant should have known after the training that only one of 4 possible motion directions will be shown in this trial. Using this discretisation would hard-code this assumption into the analysis. Alternatively, we can define difference values based on the motion direction values occurring in the experiment. While this increases the resolution for assumed motion direction values, it does so by introducing (larger) difference values that never occurred in the experiment.
+
+Note that even with a parsimonious discretisation we can have continuous, noisy observations $O^R$ and $O^M$, as the discretisation is only over internal variables encoding the expectations over possible 'true' values of motion direction, criterion and difference.
+
+\subsubsection{Accumulation of evidence and relation to real time}
+We still want to formulate decision making in the task as a sequential process evolving over time. The sequentiality is supposed to come from the online estimation of the motion direction which is now directly convolved with the estimation of the difference between motion direction and criterion.
+
+We can extend the model by explicitly allowing sequential observations of motion direction:
+\begin{equation}
+p(C, O^R, O^M_{1:T}) = c_R P(C) \int p(D | C) \int p(O^R | R) \prod_{t=1}^T p(O^M_t | M = D + R) dR dD.
+\end{equation}
+The inner part of the integrals can now be formulated in terms of a dynamics over log-evidence for each combination of criterion and difference:
+\begin{equation}
+lE_t(D, R) = \log p(O^R|R) + \sum_{i=1}^t \log p(O^M_i| M = D + R)
+\end{equation}
+$\rightarrow$
+\begin{align}
+lE_0(D, R) &= \log p(O^R|R)\\
+lE_t(D, R) &= lE_{t-1}(D, R) + \log p(O^M_t| M = D + R).
+\end{align}
+So we can again introduce real time by adding appropriate time steps:
+\begin{equation}
+lE_t(D, R) = lE_{t-1}(D, R) + \Delta t\log p(O^M_t| M = D + R).
+\end{equation}
+At each time step we then have to integrate over the possible values of the criterion to get the marginal evidence for all difference values
+\begin{equation}
+E_t(D) = \int e^{lE_t(D, R)} dR
+\end{equation}
+and finally we compute the evidence for the choice by integrating over the difference values
+\begin{equation}
+E_t(C) = p(C, O^R, O^M_{1:t}) = c_R P(C) \int p(D | C) E_t(D) dD.
+\end{equation}
 
 \end{document}
