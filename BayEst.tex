@@ -214,12 +214,20 @@ with the following factors:
 &P(C = c_-) = 1 - P(C = c_+) = \beta\\
 &p(D | C=c_+) \propto \mathcal{HN}(D | \sigma_D^2)\\
 &p(D | C=c_-) \propto \mathcal{HN}(-D | \sigma_D^2)\\
-&p(R | D) = \mathcal{M}(R | 0, 0)\\
-&p(O^R | R) = \mathcal{M}(O^R | R, \kappa_{R})\\
+&p(R | D) \propto \mathcal{M}(R | 0, \kappa_{R}) + \mathcal{M}(R | 90, \kappa_{R})\\
+&p(O^R | R) = \mathcal{M}(O^R | R, \kappa_{OR})\\
 &p(M | D, R) = \frac{1}{2}\delta(M = R - D) + \frac{1}{2}\delta(M = R + 180 - D)\\
 &p(O^M | M) = \mathcal{M}(O^M | M, \kappa_{M})
 \end{align}
-where $c_+$ denotes a clockwise choice and $c_-$ an anti-clockwise choice and the difference $D$ is defined to be $D = R - M$. The distribution of the difference is chosen to be proportional to a half-normal distribution with variance $\sigma_D^2$. This can only be proportional, because the difference is only defined on an open interval up to 180 degrees in both directions ($D \in (-180, 180)$). The choice of a half normal will favour differences that are close to 0 meaning that a subject expects hard decisions, but this can be relaxed by choosing large $\sigma_D^2$. The von Mises distribution for $R$ with mean=0 and $\kappa=0$ states that the value of the difference does not constrain the criterion at all, i.e., all criterion values are equally likely for any given value of difference. That's because the difference is only defined by both the criterion and the motion direction. Once a difference value and a criterion value are known, the motion direction can only take on one of two values, either $M = R - D$, or $M = (R + 180) - D$. The motion direction is not uniquely determined by the difference, because the criterion can either be interpreted as upward or downward motion so that the given difference can result from the given criterion and one of two possible motion directions. $\delta(x)$ is the Dirac delta function and defines the discrete, uniform distribution over the two possible motion directions. The observation distribution for the criterion (over $O^R$) is a von Mises distribution centred at the true value $R$ with precision $\kappa_R$. I define the observation distribution for motion directions analogously.
+where $c_+$ denotes a clockwise choice and $c_-$ an anti-clockwise choice and the difference $D$ is defined to be $D = R - M$. 
+
+The distribution of the difference is chosen to be proportional to a half-normal distribution with variance $\sigma_D^2$. This can only be proportional, because the difference is only defined on an open interval up to 180 degrees in both directions ($D \in (-180, 180)$). The choice of a half normal will favour differences that are close to 0 meaning that a subject expects hard decisions, but this can be relaxed by choosing large $\sigma_D^2$. 
+
+The distribution over $R$ is a mixture of two von Mises distributions centred on the cardinal directions. This allows us to model an internal expectation of cardinal criterion orientations which we expect to reduce decision times for cardinal criteria. Note that we make this distribution independent from the difference values, because for each difference criterion values occurred with equal probability in the experiment and we don't think that people have any expectations over criterion values in dependence on a difference value. The precision of the von Mises mixture, $\kappa_R$, controls how strongly participants expect cardinal criterion orientations (large $\kappa_R$, strong expectations; $\kappa_R=0$, no expectation, all orientations are deemed equally likely).
+
+Once a difference value and a criterion value are known, the motion direction can only take on one of two values, either $M = R - D$, or $M = (R + 180) - D$. The motion direction is not uniquely determined by the difference, because the criterion can either be interpreted as upward or downward motion so that the given difference can result from the given criterion and one of two possible motion directions. $\delta(x)$ is the Dirac delta function and defines the discrete, uniform distribution over the two possible motion directions. 
+
+The observation distribution for the criterion (over $O^R$) is a von Mises distribution centred at the true value $R$ with precision $\kappa_{OR}$. I define the observation distribution for motion directions analogously.
 
 \subsubsection{Inference in the difference model}
 Eventually we want to know with what probability a given choice is correct given the observations:
@@ -235,9 +243,9 @@ By plugging in the definition of the joint distribution of Eq. \eqref{eq:joint_d
 p(C, O^R, O^M) = P(C) \iint p(D | C) p(R | D) p(O^R | R)\\ 
 \frac{1}{2}\left(p(O^M | M = R - D) + p(O^M | M = R + 180 - D)\right) dR dD
 \end{multline}
-Because I defined $p(R | D)$ as a uniform distribution, I can pull it out of the integrals as a constant $p(R | D) = c_R$ which will cancel in Eq. \eqref{eq:post_diff}
+Further propagating the integral over criteria:
 \begin{multline}
-p(C, O^R, O^M) = c_R P(C) \int p(D | C) \int p(O^R | R)\\
+p(C, O^R, O^M) = P(C) \int p(D | C) \int p(R | D)p(O^R | R)\\
 \frac{1}{2}\left(p(O^M | M = R - D) + p(O^M | M = R + 180 - D)\right) dR dD.
 \end{multline}
 This means, assuming that there is only a single observation of the criterion $O^R$ which is fixed throughout a trial, we still need to integrate over both criterion values and differences to update our beliefs about the correct choice. In the model with fixed criterion above we only had to integrate over one variable (the underlying motion direction). So the procedure here is considerably more costly as for each possible value of the difference we need to integrate over all values of the criterion.
@@ -252,7 +260,7 @@ We still want to formulate decision making in the task as a sequential process e
 
 We can extend the model by explicitly allowing sequential observations of motion direction:
 \begin{multline}
-p(C, O^R, O^M_{1:T}) = c_R P(C) \int p(D | C) \int p(O^R | R)\\ \prod_{t=1}^T \frac{1}{2}\left( p(O^M_t | M = R - D) + p(O^M_t | M = R + 180 - D) \right) dR dD.
+p(C, O^R, O^M_{1:T}) = c_R P(C) \int p(D | C) \int p(R | D)p(O^R | R)\\ \prod_{t=1}^T \frac{1}{2}\left( p(O^M_t | M = R - D) + p(O^M_t | M = R + 180 - D) \right) dR dD.
 \end{multline}
 For simplification of the notation we now define the log-evidence of observed motion directions as $lE_{O^M_t}(D, R)$ as
 \begin{multline}
@@ -262,11 +270,11 @@ Note that the $-\log 2$ addend cancels in a renormalisation step in a discrete i
 
 Now the inner part of the integrals can be formulated in terms of a dynamics over log-evidence for each combination of criterion and difference:
 \begin{equation}
-lE_t(D, R) = \log p(O^R|R) + \sum_{i=1}^t lE_{O^M_i}(D, R)
+lE_t(D, R) = \log p(R | D) + \log p(O^R|R) + \sum_{i=1}^t lE_{O^M_i}(D, R)
 \end{equation}
 $\rightarrow$
 \begin{align}
-lE_0(D, R) &= \log p(O^R|R)\\
+lE_0(D, R) &= \log p(R | D) + \log p(O^R|R)\\
 lE_t(D, R) &= lE_{t-1}(D, R) + lE_{O^M_t}(D, R).
 \end{align}
 So we can again introduce real time by adding appropriate time steps:
