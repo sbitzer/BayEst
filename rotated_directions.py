@@ -12,7 +12,7 @@ import re
 import math
 import random
 import numpy as np
-from numba import jit, prange
+from numba import jit, prange, vectorize, int16, int32, int64, float64
 from warnings import warn
 from rtmodels import rtmodel
 import matplotlib.pyplot as plt
@@ -791,6 +791,887 @@ def gen_response_jitted_dir(
                 rts[tr] = toresponse[1]
     
     return choices_out, rts
+
+
+class rotated_directions_diff(rtmodel):
+    """Making decisions based on a difference between estimates of a criterion
+       direction and a motion direction."""
+    
+    @property
+    def Trials(self):
+        """Trial information used by the model.
+        
+        Dictionary with keys 'directions' and 'criteria'. Criteria are always
+        in a 1D numpy array and give the criterion presented in each trial.
+        Directions are either a 1D (use_liks=False), 3D (use_liks=True), or
+        4D (use_liks=True) numpy array. In either case it gives information 
+        about the motion directions presented in each trial.
+        
+        When 1D, directions directly contains the presented motion directions  
+                 in degrees for each trial
+        When 3D, directions contains externally estimated, unnormalised (log-)
+                 likelihood values for each considered motion direction for 
+                 each time point within the trial. Then,
+                     D, S, L = Tials['directions'].shape
+                 where D is the number of motion directions encoded in the 
+                 model and S is the length of the time sequence in each trial.
+                 This will then internally be transformed into the 4D version
+                 to comply with the encoding of the model.
+        When 4D, directions equally contains externally estimated, unnormalised 
+                 likelihood values for each considered motion direction for 
+                 each time point within the trial, but they are organised with
+                 respect to direction differences and criteria encoded in the
+                 model such that
+                     DF, 2 * CR, S, L = Trials['directions'].shape
+                 where DF is the number of differences and CR the number of
+                 criteria encoded in the model and the different motion 
+                 directions are encoded as direction = criterion - difference
+                 Note that likelihoods need to be provided for upwards and
+                 downwards pointing criteria, i.e., Trials['directions'][:, i]
+                 i in [0, CR-1] corresponds to a criterion with up direction 
+                 and Trials['directions'][:, CR + i] is the corresponding 
+                 criterion in down direction. This is necessary, because these
+                 likelihoods correspond to the two possible motion directions 
+                 that a single criterion, which can either be interpreted as up
+                 or down motion, allows.
+                 
+        Either directions or criteria can also be a scalar, then this scalar
+        will be expanded into a 1D array with number of trials determined from
+        the other
+        """
+        return self._Trials
+    
+    @Trials.setter
+    def Trials(self, Trials):
+        crit = np.array(Trials['criteria'])
+        dirs = np.array(Trials['directions'])
+        
+        if crit.ndim == 0:
+            Lc = 0
+        elif crit.ndim == 1:
+            Lc = crit.size
+        else:
+            raise ValueError('criteria in Trials has wrong format (only '
+                             'scalar or 1D array allowed)!')
+        
+        if dirs.ndim == 0:
+            Ld = 0
+        elif dirs.ndim == 1:
+            Ld = dirs.size
+        elif dirs.ndim == 3:
+            D, S, Ld = dirs.shape
+        elif dirs.ndim == 4:
+            DF, CR2, S, Ld = dirs.shape
+        else:
+            raise ValueError('directions in Trials has wrong format (only '
+                             'scalar, 1D, or 3D array allowed)!')
+        
+        # expand scalars
+        if Ld == Lc == 0:
+            raise ValueError('At least one of criteria or directions needs '
+                             'to contain elements for each trial, but I found '
+                             'that both are scalars.')
+        elif Ld == 0:
+            dirs = np.full(Lc, dirs, dtype=np.int16)
+            Ld = Lc
+        elif Lc == 0:
+            crit = np.full(Ld, crit, dtype=np.int16)
+            Lc = Ld
+            
+        if Ld == Lc:
+            self._L = Lc
+        else:
+            raise ValueError('Number of trials given in criteria and '
+                             'directions is not equal, but needs to be!')
+            
+        # ensure that directions and criteria are encoded correctly
+        
+        # this is a neat trick that maps positive and negative angles into 
+        # [0, 180] such that absolute values greater than 180 are circled back
+        # to 0 through the modulus operation while at the same time negative
+        # values are mapped to positive ones with 180 - value, this works, 
+        # because the python modulus operator returns 
+        # val - 180 * floor(val / 180) = 180 - abs(val) % 180
+        crit = crit.astype(np.int16) % 180
+        if self.criteria is None:
+            self.criteria = np.unique(crit)
+        else:
+            # check that criteria only contains valid criteria
+            if not np.all(np.isin(np.unique(crit), self.criteria)):
+                raise ValueError(
+                        'Trials contains criteria that are not ' + 
+                        'registered in the model, please check!')
+        
+        if dirs.ndim == 1:
+            dirs = dirs.astype(np.int16) % 360
+            if self.directions is None:
+                self.directions = np.unique(dirs)
+            else:
+                # check that Trials only contains valid directions
+                if not np.all(np.isin(np.unique(dirs), self.directions)):
+                    raise ValueError(
+                            'Trials contains directions that are not ' + 
+                            'registered in the model, please check!')
+        elif dirs.ndim == 3:
+            dirs = dirs.astype(float)
+            
+            if self.directions is None:
+                raise ValueError(
+                        'It appears that you have created a model which uses '
+                        'likelihood values as Trial input, but you have '
+                        'forgotten to specify the motion directions '
+                        'corresponding to the likelihoods. Please provide '
+                        '"directions" in the constructor of the model.')
+            
+            try:
+                self.differences
+            except AttributeError:
+                # gen_differences uses use_liks so I need to make sure that it
+                # can identify the use_lik state from the stored Trials
+                self._Trials = {'criteria': crit, 'directions': dirs}
+                
+                # determine the minimal set of differences needed to represent
+                # the directions given the available criterion values
+                self.gen_differences()
+            
+            # determine the directions corresponding to each combination of
+            # difference and criterion now encoded in the model
+            cr = np.tile(np.r_[self.criteria, 180 + self.criteria], 
+                         (self.DF, 1))
+            df = np.tile(self.differences[:, None], (1, 2 * self.CR))
+            di = np.reshape((cr.flatten() - df.flatten()) % 360, 
+                            (self.DF, 2 * self.CR))
+            
+            # if all directions now defined by criteria and differences are
+            # available in the provided set of directions
+            if set(np.unique(di)).issubset(set(self.directions)):
+                # just figure out the corresponding indices into dirs
+                dirinds = np.searchsorted(
+                        self.directions, di, 
+                        sorter=np.argsort(self.directions))
+            else:
+                # find indices of those provided directions that are closest
+                # to the ones required by criteria and differences
+                dirinds = np.zeros_like(di)
+                for i in range(self.DF):
+                    for j in range(2 * self.CR):
+                        dirinds[i, j] = np.argmin(
+                                np.abs(self.directions - di[i, j]))
+                
+                warn("The way the model is now setup the combinations of "
+                     "criteria and differences define some directions for "
+                     "which no likelihoods are provided in "
+                     "Trials['directions']. Will choose likelihood values "
+                     "associated with the closest provided directions for "
+                     "these directions, but you might want to check the "
+                     "setup of the model!")
+            
+            # copy likelihood values in difference x criterion array
+            liks = np.zeros(self.DF, 2 * self.CR, S, Lc)
+            for i in range(self.DF):
+                for j in range(2 * self.CR):
+                    liks[i, j, :, :] = dirs[dirinds[i, j], :, :]
+            dirs = liks
+        
+        elif dirs.ndim == 4:
+            dirs = dirs.astype(float)
+            
+            try:
+                self.DF
+            except AttributeError:
+                if self.directions is None:
+                    raise ValueError(
+                            'It appears that you have created a model which uses '
+                            'likelihood values as Trial input, but you have '
+                            'forgotten to specify the motion directions '
+                            'corresponding to the likelihoods. Please provide '
+                            '"directions" in the constructor of the model.')
+                else:
+                    # gen_differences uses use_liks so I need to make sure that it
+                    # can identify the use_lik state from the stored Trials
+                    self._Trials = {'criteria': crit, 'directions': dirs}
+                    
+                    # determine the minimal set of differences needed to represent
+                    # the directions given the available criterion values
+                    self.gen_differences()
+                    
+            if self.DF != DF:
+                raise ValueError(
+                        "The number of differences used by the model as "
+                        "computed from the provided criteria and directions "
+                        "does not correspond to the number of differences "
+                        "used by Trials['directions']!")
+            if self.CR * 2 != CR2:
+                raise ValueError(
+                        "The number of criteria encoded in the model is not "
+                        "compatible with the number of criteria used by "
+                        "Trials['directions']!")
+        
+        self._Trials = {'criteria': crit, 'directions': dirs}
+        
+        self.gen_correct()
+        self.check_balance()
+            
+    @property
+    def use_liks(self):
+        """Whether the model uses externally estimated likelihoods as input, 
+            or just stored directions."""
+        if self.Trials['directions'].ndim == 1:
+            return False
+        else:
+            return True
+    
+    @property
+    def directions(self):
+        """The set of motion directions that may be observed.
+        
+        Directions are defined as angles in [0, 360) where 0 is horizontal 
+        motion moving to the right and 90 is vertical motion moving up.
+        Angles outside of [0, 360) are appropriately mapped into this 
+        range adhering to the given definition.
+        """
+        return self._directions
+    
+    @directions.setter
+    def directions(self, directions):
+        if directions is None:
+            self._directions = None
+        else:
+            if isinstance(directions, np.ndarray):
+                if not directions.ndim == 1:
+                    raise ValueError("directions should be provided in a one-"
+                                     "dimensional array.")
+                else:
+                    self._directions = directions
+            elif np.isscalar(directions):
+                # equally distribute ori# directions from -pi to pi
+                directions = int(directions)
+                self._directions = (np.linspace(0, 1 - 1/directions, directions) 
+                                    * 360 - 180) % 360
+            else:
+                raise ValueError("Could not recognise format of given directions"
+                                 "! Provide them as int for equally spaced "
+                                 "directions, or as 1D array!")
+            
+            # map into [0, 360) appropriately handling negative angles, see same
+            # operation for criteria above for explanation
+            self._directions = (self._directions % 360).astype(np.int16)
+            
+            if not self._during_init:
+                self.gen_differences()
+                self.check_balance()
+                self.gen_correct()
+    
+    
+    @property
+    def D(self):
+        """Number of directions considered in model."""
+        return self.directions.size
+        
+    
+    @property
+    def criteria(self):
+        """The criterion orientations encoded in the model.
+        
+        As the criterion orientations are not directional, they must be within
+        [0, 180) only, where 0 is a horizontal criterion and 90 a vertical 
+        criterion. Given values larger than 180 will be mapped to values within
+        180 using modulo. Then negative values will be mapped to positive by 
+        180 - value.
+        """
+        return self._criteria
+    
+    @criteria.setter
+    def criteria(self, crit):
+        if crit is None:
+            self._criteria = None
+        else:
+            crit = np.array(crit)
+            
+            if crit.ndim == 1:
+                self._criteria = np.unique(crit.astype(np.int16))
+            else:
+                raise ValueError("Could not recognise format of criterion "
+                                 "orientations! Please provide criteria as a 1D "
+                                 "array!")
+            
+            # this is a neat trick that maps positive and negative angles into 
+            # [0, pi] such that absolute values greater than pi are circled back
+            # to 0 through the modulus operation while at the same time negative
+            # values are mapped to positive ones with pi - value, this works, 
+            # because the python modulus operator returns 
+            # val - pi * floor(val / pi) = pi - abs(val) % pi
+            self._criteria = self._criteria % 180
+            
+            if not self._during_init:
+                self.gen_differences()
+                self.check_balance()
+                self.gen_correct()
+            
+    @property
+    def CR(self):
+        """Number of criteria encoded in model."""
+        return self.criteria.size
+    
+    
+    @property
+    def differences(self):
+        """Differences encoded in the model.
+        
+        Computed from given criteria and Trials, or criteria and directions.
+        """
+        return self._differences
+    
+    def gen_differences(self):
+        """Generates the minimal set of differences needed to encode the 
+           directions stored in the model."""
+           
+        if self.use_liks:
+            # all posssible combinations of criteria and directions
+            dirs = np.repeat(self.directions, self.CR)
+            crit = np.tile(self.criteria, self.D)
+        else:
+            # only combinations of criteria and direction that occurred in the
+            # experiment
+            dirs = self.Trials['directions']
+            crit = self.Trials['criteria']
+        
+        self._differences = np.unique(compute_minimal_differences(dirs, crit))
+    
+    @property
+    def DF(self):
+        """Number of differences considered in model."""
+        return self.differences.size
+    
+    
+    def check_balance(self):
+        """Checks whether design is balanced and warns if not.
+        
+        A design is balanced, when for all criteria there is an equal number
+        of directions that are clockwise or anti-clockwise rotated.
+        """
+        if self.use_liks:
+            pass
+        else:
+            criteria = self.criteria
+            
+            diffs = compute_minimal_differences(self.Trials['directions'],
+                                                self.Trials['criteria'])
+            
+            for crit in criteria:
+                critind = self.Trials['criteria'] == crit
+                rotations = np.sign(diffs[critind])
+                if rotations.sum() != 0:
+                    warn("Unbalanced design: For criterion %3d there are %d "
+                         "clockwise, but %d anti-clockwise rotations!" % (
+                                 crit, (rotations == 1), (rotations == -1)))
+    
+    
+    @property
+    def correct(self):
+        """The correct choice for each trial."""
+        return self._correct
+                
+    def gen_correct(self):
+        """Figures out correct choice from directions and criteria."""
+        
+        if self.use_liks:
+            self._correct = np.full(self.L, np.nan)
+        else:
+            # positive diffs correspond to clockwise rotation, negative to 
+            # anti-clockwise rotation
+            diffs = compute_minimal_differences(self.Trials['directions'], 
+                                                self.Trials['criteria'])
+            
+            correct = np.full_like(diffs, self.choices[0], 
+                                   dtype=self.choices.dtype)
+            correct[diffs < 0] = self.choices[1]
+            
+            # difference of 0 is undecidable, encode as time out response
+            correct[diffs == 0] = self.toresponse[0]
+            
+        self._correct = correct
+    
+    
+    @property
+    def S(self):
+        """Number of time steps maximally simulated by the model."""
+        if self.Trials['directions'].ndim == 3:
+            return self.Trials['directions'].shape[1]
+        else:
+            # the + 1 ensures that time outs can be generated
+            return int(math.ceil(self.maxrt / self.dt)) + 1
+    
+    
+    parnames = ['diffstd', 'critstd', 'dirstd', 'cnoisestd', 'dnoisestd', 
+                'bound', 'bstretch', 'bshape', 
+                'bias', 'ndtloc', 'ndtspread', 'lapseprob', 'lapsetoprob']
+    
+    
+    @property
+    def P(self):
+        "number of parameters in the model"
+        
+        return len(self.parnames)
+    
+    
+    def __init__(self, Trials, dt=1, directions=None, criteria=None, bias=0.5, 
+                 diffstd=1, critstd=1, dirstd=1, cnoisestd=1, 
+                 dnoisestd=1, bound=0.8, bstretch=0, bshape=1.4, 
+                 ndtloc=-12, ndtspread=0, lapseprob=0.05, lapsetoprob=0.1, 
+                 ndtdist='lognormal', **rtmodel_args):
+        super(rotated_directions_diff, self).__init__(**rtmodel_args)
+        
+        self._during_init = True
+        
+        self.name = 'Discrete direction difference model'
+        
+        # Time resolution of model simulations.
+        self.dt = dt
+        
+        # set directions that are estimated
+        self.directions = directions
+        
+        # criterion orientations
+        self.criteria = criteria
+        
+        # Trial information used by the model.
+        self.Trials = Trials
+        
+        # generate the differences from the given information
+        self.gen_differences()
+        
+        # choice bias as prior probability that clockwise is correct
+        self.bias = bias
+        
+        # determines prior over difference magnitudes 
+        # (diffstd -> inf => uniform)
+        self.diffstd = diffstd
+        
+        # expected spread of criterion observations
+        self.critstd = critstd
+        
+        # expected spread of motion direction observations 
+        # (previously called internal uncertainty as standard deviation)
+        self.dirstd = dirstd
+        
+        # Standard deviation of noise added to criterion observation
+        self.cnoisestd = cnoisestd
+        
+        # Standard deviation of noise added to motion direction observations
+        self.dnoisestd = dnoisestd
+            
+        # Bound that needs to be reached before decision is made.
+        # If collapsing, it's the initial value.
+        self.bound = bound
+            
+        # Extent of collapse for bound, see boundfun.
+        self.bstretch = bstretch
+        
+        # Shape parameter of the collapsing bound, see boundfun
+        self.bshape = bshape
+            
+        # which ndt distribution to use?
+        self.ndtdist = ndtdist
+        
+        # location of nondecision time distribution
+        self.ndtloc = ndtloc
+            
+        # Spread of nondecision time.
+        self.ndtspread = ndtspread
+            
+        # Probability of a lapse.
+        self.lapseprob = lapseprob
+            
+        # Probability that a lapse will be timed out.
+        self.lapsetoprob = lapsetoprob
+        
+        self._during_init = False
+        
+        
+    def __str__(self):
+        info = super(rotated_directions_diff, self).__str__()
+        
+        # empty line
+        info += '\n'
+        
+        # model-specific parameters
+        info += 'differences:\n'
+        info += self.differences.__str__() + '\n'
+        info += 'criteria:\n'
+        info += self.criteria.__str__() + '\n'
+        info += 'uses likes   : %4d' % self.use_liks + '\n'
+        info += 'dt           : %8.3f' % self.dt + '\n'
+        info += 'bound        : %8.3f' % self.bound + '\n'
+        info += 'bstretch     : %7.2f' % self.bstretch + '\n'
+        info += 'bshape       : %7.2f' % self.bshape + '\n'
+        info += 'diffstd      : %6.1f' % self.diffstd + '\n'
+        info += 'critstd      : %6.1f' % self.critstd + '\n'
+        info += 'dirstd       : %6.1f' % self.dirstd + '\n'
+        info += 'cnoisestd    : %6.1f' % self.cnoisestd + '\n'
+        info += 'dnoisestd    : %6.1f' % self.dnoisestd + '\n'
+        info += 'ndtdist      : %s'    % self.ndtdist + '\n'
+        info += 'ndtloc       : %7.2f' % self.ndtloc + '\n'
+        info += 'ndtspread    : %7.2f' % self.ndtspread + '\n'
+        info += 'lapseprob    : %7.2f' % self.lapseprob + '\n'
+        info += 'lapsetoprob  : %7.2f' % self.lapsetoprob + '\n'
+        info += 'bias         : %7.2f' % self.bias + '\n'
+        
+        return info
+    
+    
+    def estimate_memory_for_gen_response(self, N):
+        """Estimate how much memory you would need to produce the desired 
+           responses."""
+        
+        mbpernum = 8 / 1024 / 1024
+        
+        # (for input features + for input params + for output responses)
+        return mbpernum * N * (self.S + self.P + 2)
+    
+    
+    def gen_response(self, trind, rep=1):
+        N = trind.size
+        if rep > 1:
+            trind = np.tile(trind, rep)
+        
+        choices, rts = self.gen_response_with_params(trind)
+        
+        if rep > 1:
+            choices = choices.reshape((rep, N))
+            rts = rts.reshape((rep, N))
+        
+        return choices, rts
+        
+        
+    def gen_response_with_params(self, trind, params={}, parnames=None, 
+                                 user_code=True):
+        if parnames is None:
+            assert( isinstance(params, dict) )
+            pardict = params
+        else:
+            assert( isinstance(params, np.ndarray) )
+            pardict = {name: params[:, ind] 
+                       for ind, name in enumerate(parnames)}
+                
+        parnames = pardict.keys()
+        
+        # check whether any of the bound parameters are given
+        if any(x in ['bound', 'bstretch', 'bshape'] for x in parnames):
+            changing_bound = True
+        else:
+            changing_bound = False
+        
+        # get the number of different parameter sets, P, and check whether the 
+        # given parameter counts are consistent (all have the same P)
+        P = None
+        for name in parnames:
+            if not np.isscalar(pardict[name]):
+                if P is None:
+                    P = pardict[name].shape[0]
+                else:
+                    if P != pardict[name].shape[0]:
+                        raise ValueError('The given parameter dictionary ' +
+                            'contains inconsistent parameter counts')
+        if P is None:
+            P = 1
+        
+        # get the number of trials, N, and check whether it is consistent with 
+        # the number of parameters P
+        if np.isscalar(trind):
+            trind = np.full(P, trind, dtype=int)
+        N = trind.shape[0]
+        if P > 1 and N > 1 and N != P:
+            raise ValueError('The number of trials in trind and the ' +
+                             'number of parameters in params does not ' + 
+                             'fit together')
+        
+        NP = max(N, P)
+        
+        # if continuing would exceed the memory limit
+        if self.estimate_memory_for_gen_response(NP) > self.memlim:
+            # divide the job in smaller batches and run those
+        
+            # determine batch size for given memory limit
+            NB = math.floor(NP / self.estimate_memory_for_gen_response(NP) *
+                            self.memlim)
+            
+            choices = np.zeros(NP, dtype=np.int8)
+            rts = np.zeros(NP)
+            
+            remaining = NP
+            firstind = 0
+            while remaining > 0:
+                index = np.arange(firstind, firstind + min(remaining, NB))
+                if P > 1 and N > 1:
+                    trind_batch = trind[index]
+                    params_batch = extract_param_batch(pardict, index)
+                elif N == 1:
+                    trind_batch = trind
+                    params_batch = extract_param_batch(pardict, index)
+                elif P == 1:
+                    trind_batch = trind[index]
+                    params_batch = pardict
+                else:
+                    raise RuntimeError("N and P are not consistent.")
+                    
+                choices[index], rts[index] = self.gen_response_with_params(
+                    trind_batch, params_batch, user_code=user_code)
+                
+                remaining -= NB
+                firstind += NB
+        else:
+            # make a complete parameter dictionary with all parameters
+            # this is quite a bit of waste of memory and should probably be recoded
+            # more sensibly in the future, but for now it makes the jitted function
+            # simple
+            allpars = {}
+            for name in self.parnames:
+                if name in parnames:
+                    allpars[name] = pardict[name]
+                else:
+                    allpars[name] = getattr(self, name)
+                    
+                if np.isscalar(allpars[name]) and N >= 1:
+                    allpars[name] = np.full(N, allpars[name], dtype=float)
+                elif allpars[name].shape[0] == 1 and N > 1:
+                    allpars[name] = np.full(N, allpars[name], dtype=float)
+            
+            # select input for directions
+            if self.use_liks:
+                dirs = self.Trials['directions'][:, :, trind]
+            else:
+                dirs = self.Trials['directions'][trind]
+                
+            # call the compiled function
+            choices, rts = self.gen_response_jitted(
+                    dirs, self.Trials['criteria'][trind], allpars, 
+                    changing_bound)
+                
+            # transform choices to those expected by user, if necessary
+            if user_code:
+                toresponse_intern = np.r_[-1, self.toresponse[1]]
+                timed_out = choices == toresponse_intern[0]
+                choices[timed_out] = self.toresponse[0]
+                in_time = np.logical_not(timed_out)
+                choices[in_time] = self.choices[choices[in_time]]
+            
+        return choices, rts
+    
+    
+    def gen_response_jitted(self, trial_directions, trial_criteria, allpars, 
+                            changing_bound):
+        toresponse_intern = np.r_[-1, self.toresponse[1]]
+            
+        # for numba trial_directions needs to have a consistent size
+        if trial_directions.ndim == 1:
+            trial_directions = trial_directions[:, None, None, None]
+        
+        # call the compiled function
+        choices, rts = gen_response_jitted_diff(
+                trial_directions, trial_criteria, self.maxrt, toresponse_intern, 
+                self.choices, self.dt, self.differences, self.criteria, 
+                allpars['bias'], allpars['diffstd'], allpars['critstd'],
+                allpars['dirstd'], allpars['cnoisestd'], allpars['dnoisestd'],
+                allpars['bound'], allpars['bstretch'], allpars['bshape'], 
+                allpars['ndtloc'], allpars['ndtspread'], 
+                allpars['lapseprob'], allpars['lapsetoprob'], changing_bound,
+                0 if self.ndtdist == 'lognormal' else 1)
+            
+        return choices, rts
+    
+    
+@jit(nopython=True, parallel=True)
+def gen_response_jitted_diff(
+        trdir, trcrit, maxrt, toresponse, choices, dt, differences, criteria,
+        bias, diffstd, critstd, dirstd, cnoisestd, dnoisestd, bound, bstretch, 
+        bshape, ndtloc, ndtspread, lapseprob, lapsetoprob, changing_bound, 
+        ndtdist):
+    
+    CR = len(criteria)
+    DF = len(differences)
+    C = len(choices)
+    
+    cw = differences > 0
+    acw = differences < 0
+    
+    radcrit = to_rad(criteria)
+    raddiff = to_rad(differences)
+    
+    if trdir.shape[0] == DF:
+        use_liks = True
+        _, _, S, N = trdir.shape
+    else:
+        use_liks = False
+        N = trdir.size
+        S = int(math.ceil(maxrt / dt)) + 1
+    
+    choices_out = np.full(N, toresponse[0], dtype=np.int8)
+    rts = np.full(N, toresponse[1], np.float64)
+    
+    # pre-compute collapsing bound
+    boundvals = np.full(S, math.log(bound[0]))
+    if bstretch[0] > 0:
+        for t in range(S):
+            boundvals[t] = math.log( boundfun((t+1.0) / maxrt, bound[0], 
+                bstretch[0], bshape[0]) )
+    
+    for tr in prange(N):
+        # is it a lapse trial?
+        if random.random() < lapseprob[tr]:
+            # is it a timed-out lapse trial?
+            if random.random() < lapsetoprob[tr]:
+                choices_out[tr] = toresponse[0]
+                rts[tr] = toresponse[1]
+            else:
+                choices_out[tr] = random.randint(0, C-1)
+                rts[tr] = random.random() * maxrt
+        else:
+            # discretised half-normal prior over differences 
+            # (given a particular choice)
+            lprior_D = np.full((DF, 2), -np.inf)
+            lprior_D[cw, 0] = - raddiff[cw] ** 2 / diffstd[tr] ** 2
+            lprior_D[acw, 1] = - raddiff[acw] ** 2 / diffstd[tr] ** 2
+            Z = logsumexp_2d(lprior_D, axis=0)[0, :]
+            for df in range(DF):
+                lprior_D[df, :] -= Z
+            
+            # compute evidences for the criterion value by sampling a criterion
+            # observation and determining its likelihood for each considered
+            # criterion
+            o_crit = random.vonmisesvariate(
+                    to_rad(trcrit[tr]), 1 / cnoisestd[tr]**2)
+            lCR = np.cos(o_crit - radcrit) / critstd[tr]**2
+            
+            dirkappa_tr = 1 / dirstd[tr] ** 2
+            dnoisekappa_tr = 1 / dnoisestd[tr] ** 2
+            
+            # initialise the log-evidence of observations with computed 
+            # criteria evidences, dim will be DF x CR
+            lE_DR = np.zeros((DF, CR))
+            for df in range(DF):
+                lE_DR[df, :] = lCR
+                
+            # for all considered time points
+            for t in range(S):
+                # get current bound value
+                if changing_bound:
+                    # need to compute boundval from parameters in this trial
+                    if bstretch[tr] == 0:
+                        boundval = math.log(bound[tr])
+                    else:
+                        boundval = math.log( boundfun((t+1.0) / maxrt, 
+                            bound[tr], bstretch[tr], bshape[tr]) )
+                else:
+                    # can use pre-computed bound value
+                    boundval = boundvals[t]
+                
+                # initialise log-evidence for each difference, use -inf,
+                # because you will sum exp(log-evidence) and you don't want
+                # the initial value to contribute to the sum
+                lE_D = np.full(DF, -np.inf)
+                
+                if use_liks:
+                    # get log-evidence for current direction observation
+                    # as provided as input
+                    for cr in range(CR):
+                        # although dirstd is only defined for the observation
+                        # likelihood, I here also use it to scale the 
+                        # pre-computed likelihoods to allow the model to reduce
+                        # the influence of observations on the decision 
+                        # variable in a compatible way (large dirstd reduces
+                        # influence of observations)
+                        lE_DR[:, cr] += dt * (logsumexp_2d(
+                                np.stack((trdir[:, cr, t, tr] * dirkappa_tr, 
+                                          trdir[:, cr + CR, t, tr]
+                                          * dirkappa_tr)).T, axis=1))[:, 0]
+                        lE_D = logsumexp_2d(np.stack((lE_D, lE_DR[:, cr])).T,
+                                            axis=1)[:, 0]
+                else:
+                    # compute log-evidence for current direction observation by
+                    # sampling a corresponding observation
+                    o_dir = random.vonmisesvariate(
+                            to_rad(trdir[tr, 0, 0, 0]), dnoisekappa_tr)
+                    
+                    for cr in range(CR):
+                        # compute log-evidences for observed direction
+                        lE_OM = np.zeros((DF, 2))
+                        for df in range(DF):
+                            lE_OM[df, 0] = np.cos(o_dir - (
+                                    radcrit[cr] - raddiff[df])) * dirkappa_tr
+                            lE_OM[df, 1] = np.cos(o_dir - (
+                                    radcrit[cr] + np.pi - raddiff[df])) * dirkappa_tr
+                        
+                        lE_OM -= math.log(2)
+                        
+                        lE_DR[:, cr] += dt * logsumexp_2d(lE_OM, axis=1)[:, 0]
+                        
+                        lE_D = logsumexp_2d(np.stack((lE_D, lE_DR[:, cr])).T,
+                                            axis=1)[:, 0]
+                        
+                # log-probability of clockwise and anti-clockwise rotation
+                # (needs to be renormalised)
+                lp_rot = np.zeros(2)
+                lp_rot[0] = (logsumexp(lprior_D[cw, 0] + lE_D[cw])
+                             + math.log(bias[tr]))
+                lp_rot[1] = (logsumexp(lprior_D[acw, 1] + lE_D[acw])
+                             + math.log(1 - bias[tr]))
+                lp_rot -= logsumexp(lp_rot)
+                
+                if lp_rot[0] >= boundval or lp_rot[1] >= boundval:
+                    if ndtdist == 0:
+                        ndt = random.lognormvariate(ndtloc[tr], ndtspread[tr])
+                    else:
+                        ndt = (random.random() * ndtspread[tr]
+                               + math.exp(ndtloc[tr]))
+                        
+                    # add 1 to t because t starts from 0
+                    rts[tr] = (t+1) * dt + ndt
+                    
+                    if lp_rot[0] >= boundval:
+                        choices_out[tr] = 0
+                    else:
+                        choices_out[tr] = 1
+                        
+                    break
+                
+            if rts[tr] > maxrt:
+                choices_out[tr] = toresponse[0]
+                rts[tr] = toresponse[1]
+    
+    return choices_out, rts
+
+
+@vectorize([float64(int16), float64(int32), float64(int64), float64(float64)],
+           nopython=True, cache=True)
+def to_rad(degree):
+    return float(degree) / 180 * np.pi
+
+
+@vectorize([int16(int16, int16), int32(int32, int32), int64(int64, int64)], 
+           nopython=True, cache=True)
+def compute_minimal_differences(direct, crit):
+    """Computes minimal difference between criteria and directions so that 
+       negative differences correspond to anit-clockwise rotation and positive 
+       ones correspond to clockwise rotation.
+       
+       The difficulty here is that the criteria simultaneously represent upward
+       and downward directions and we are only interested in the smallest 
+       differences among the two interpretations, but the differences also need
+       to have the correct sign.
+    """
+    
+    # first interpretation of criterion as upward direction
+    diff1 = crit - direct
+    if diff1 <= -180:
+        diff1 += 360
+    
+    # second interpretation of criterion as downward direction
+    diff2 = (crit + 180) - direct
+    if diff2 >= 180:
+        diff2 -= 360
+    
+    return diff1 if np.abs(diff1) <= np.abs(diff2) else diff2
 
 
 @jit(nopython=True, cache=True)
