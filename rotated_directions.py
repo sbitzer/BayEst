@@ -1320,6 +1320,73 @@ class rotated_directions_diff(rtmodel):
         return info
     
     
+    def plot_dt_ndt_distributions(self, mean=None, cov=None, pars=None, R=30):
+        """Plot decision and non-decision time distributions separately.
+        
+        Uses either the parameters stored in the model, or the given parameter
+        posterior. Decision time distribution will include lapses.
+        """
+        
+        fig, ax = plt.subplots()
+        
+        if mean is not None:
+            params = pars.sample_transformed(self.L * R, mean, cov)
+            
+            inds = [pars.names[pars.names == 'ndtloc'].index.values[0],
+                    pars.names[pars.names == 'ndtspread'].index.values[0]]
+        
+        # sample from decision time distribution
+        if mean is None:
+            ndtloc = self.ndtloc
+            ndtspread = self.ndtspread
+            self.ndtloc = -30
+            self.ndtspread = 0
+            choices, rts = self.gen_response(np.arange(self.L), rep=R)
+            self.ndtloc = ndtloc
+            self.ndtspread = ndtspread
+        else:
+            ndtloc = params[:, inds[0]].copy()
+            ndtspread = params[:, inds[1]].copy()
+            params[:, inds[0]] = -30
+            params[:, inds[1]] = 0
+            choices, rts = self.gen_response_with_params(
+                    np.tile(np.arange(self.L), R), params, pars.names)
+            params[:, inds[0]] = ndtloc
+            params[:, inds[1]] = ndtspread
+            
+        self.plot_response_distribution(choices, rts, ax=ax)
+        
+        # sample from non-decision time distribution
+        if mean is None:
+            if self.ndtdist == 'lognormal':
+                rts = np.random.lognormal(self.ndtloc, self.ndtspread, 
+                                          self.L * R)
+            elif self.ndtdist == 'uniform':
+                rts = (np.random.rand(self.L * R) * self.ndtspread
+                       + np.exp(self.ndtloc))
+        else:
+            if self.ndtdist == 'lognormal':
+                rts = np.array([np.random.lognormal(mu, sig) 
+                                for (mu, sig) in params[:, inds]])
+            elif self.ndtdist == 'uniform':
+                rts = (np.random.rand(params.shape[0]) * params[:, inds[1]]
+                       + np.exp(params[:, inds[0]]))
+            
+        choices = self.choices[np.zeros(self.L * R, dtype=int)]
+        
+        self.plot_response_distribution(choices, rts, alpha=0.5, ax=ax)
+        
+        ax.set_xlabel('time (s)')
+        ax.set_ylabel('density')
+        
+        ax.legend([c[0] for c in ax.containers], 
+                  ['dt for choice %d' % self.choices[0], 
+                   'dt for choice %d' % self.choices[1], 
+                   'ndt'])
+        
+        return fig, ax
+    
+    
     def estimate_memory_for_gen_response(self, N):
         """Estimate how much memory you would need to produce the desired 
            responses."""
