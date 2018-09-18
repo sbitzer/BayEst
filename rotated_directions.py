@@ -1203,8 +1203,8 @@ class rotated_directions_diff(rtmodel):
             return int(math.ceil(self.maxrt / self.dt)) + 1
     
     
-    parnames = ['diffstd', 'critstd', 'dirstd', 'cnoisestd', 'dnoisestd', 
-                'bound', 'bstretch', 'bshape', 
+    parnames = ['diffstd', 'cpsqrtkappa', 'critstd', 'dirstd', 'cnoisestd',
+                'dnoisestd', 'bound', 'bstretch', 'bshape', 
                 'bias', 'ndtloc', 'ndtspread', 'lapseprob', 'lapsetoprob']
     
     
@@ -1216,7 +1216,7 @@ class rotated_directions_diff(rtmodel):
     
     
     def __init__(self, Trials, dt=1, directions=None, criteria=None, bias=0.5, 
-                 diffstd=1, critstd=1, dirstd=1, cnoisestd=1, 
+                 diffstd=1, cpsqrtkappa=1, critstd=1, dirstd=1, cnoisestd=1, 
                  dnoisestd=1, bound=0.8, bstretch=0, bshape=1.4, 
                  ndtloc=-12, ndtspread=0, lapseprob=0.05, lapsetoprob=0.1, 
                  ndtdist='lognormal', **rtmodel_args):
@@ -1247,6 +1247,14 @@ class rotated_directions_diff(rtmodel):
         # determines prior over difference magnitudes 
         # (diffstd -> inf => uniform)
         self.diffstd = diffstd
+        
+        # criterion-prior-kappa: determines prior over criterion values,
+        # the larger the kappa, the stronger cardinal criteria are expected
+        # chose to implement as sqrt(kappa) to make scale comparable to 
+        # std-parameters; chose not to implement as std to set uniform 
+        # distribution over criteria at parameter=0 which is easier to favour
+        # in the parameter prior
+        self.cpsqrtkappa = cpsqrtkappa
         
         # expected spread of criterion observations
         self.critstd = critstd
@@ -1306,6 +1314,7 @@ class rotated_directions_diff(rtmodel):
         info += 'bstretch     : %7.2f' % self.bstretch + '\n'
         info += 'bshape       : %7.2f' % self.bshape + '\n'
         info += 'diffstd      : %6.1f' % self.diffstd + '\n'
+        info += 'cpsqrtkappa  : %6.1f' % self.cpsqrtkappa + '\n'
         info += 'critstd      : %6.1f' % self.critstd + '\n'
         info += 'dirstd       : %6.1f' % self.dirstd + '\n'
         info += 'cnoisestd    : %6.1f' % self.cnoisestd + '\n'
@@ -1538,10 +1547,10 @@ class rotated_directions_diff(rtmodel):
         choices, rts = gen_response_jitted_diff(
                 trial_directions, trial_criteria, self.maxrt, toresponse_intern, 
                 self.choices, self.dt, self.differences, self.criteria, 
-                allpars['bias'], allpars['diffstd'], allpars['critstd'],
-                allpars['dirstd'], allpars['cnoisestd'], allpars['dnoisestd'],
-                allpars['bound'], allpars['bstretch'], allpars['bshape'], 
-                allpars['ndtloc'], allpars['ndtspread'], 
+                allpars['bias'], allpars['diffstd'], allpars['cpsqrtkappa'], 
+                allpars['critstd'], allpars['dirstd'], allpars['cnoisestd'], 
+                allpars['dnoisestd'], allpars['bound'], allpars['bstretch'], 
+                allpars['bshape'], allpars['ndtloc'], allpars['ndtspread'], 
                 allpars['lapseprob'], allpars['lapsetoprob'], changing_bound,
                 0 if self.ndtdist == 'lognormal' else 1)
             
@@ -1551,9 +1560,9 @@ class rotated_directions_diff(rtmodel):
 @jit(nopython=True, parallel=True)
 def gen_response_jitted_diff(
         trdir, trcrit, maxrt, toresponse, choices, dt, differences, criteria,
-        bias, diffstd, critstd, dirstd, cnoisestd, dnoisestd, bound, bstretch, 
-        bshape, ndtloc, ndtspread, lapseprob, lapsetoprob, changing_bound, 
-        ndtdist):
+        bias, diffstd, cpsqrtkappa, critstd, dirstd, cnoisestd, dnoisestd, bound, 
+        bstretch, bshape, ndtloc, ndtspread, lapseprob, lapsetoprob, 
+        changing_bound, ndtdist):
     
     CR = len(criteria)
     DF = len(differences)
@@ -1564,6 +1573,13 @@ def gen_response_jitted_diff(
     
     radcrit = to_rad(criteria)
     raddiff = to_rad(differences)
+    
+    # unscaled densities for the von Mises mixture in criterion prior
+    # I had to precompute these here, because numba breaks with an internal
+    # error, if I put this code at the right place inside the parallel for loop
+    rc0 = np.cos(radcrit)
+    rc90 = np.cos(radcrit - np.pi / 2)
+    rc180 = np.cos(radcrit - np.pi)
     
     if trdir.shape[0] == DF:
         use_liks = True
@@ -1603,6 +1619,18 @@ def gen_response_jitted_diff(
             for df in range(DF):
                 lprior_D[df, :] -= Z
             
+            # compute criterion prior as mixture of two von Mises distributions
+            # centred on the cardinal orientations (0 and 90), 
+            # ignoring normalising constants
+            # implement as mixture of 3 densities centred on 0, 90 and 180, 
+            # because von Mises wraps around at 360 degrees and not at 180
+            # degrees what I need here
+            cpkappa = cpsqrtkappa[tr] ** 2
+            lpCR = logsumexp_2d(np.stack(
+                    (rc0 * cpkappa, 
+                     rc90 * cpkappa,
+                     rc180 * cpkappa)).T, axis=1)[:, 0]
+            
             # compute evidences for the criterion value by sampling a criterion
             # observation and determining its likelihood for each considered
             # criterion
@@ -1617,7 +1645,7 @@ def gen_response_jitted_diff(
             # criteria evidences, dim will be DF x CR
             lE_DR = np.zeros((DF, CR))
             for df in range(DF):
-                lE_DR[df, :] = lCR
+                lE_DR[df, :] = lpCR + lCR
                 
             # for all considered time points
             for t in range(S):
