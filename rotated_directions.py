@@ -1633,10 +1633,11 @@ def gen_response_jitted_diff(
             
             # compute evidences for the criterion value by sampling a criterion
             # observation and determining its likelihood for each considered
-            # criterion
+            # criterion; note the factor of 2 in np.cos to account for the fact
+            # that criteria wrap around at 180 degree and not at 360
             o_crit = random.vonmisesvariate(
                     to_rad(trcrit[tr]), 1 / cnoisestd[tr]**2)
-            lCR = np.cos(o_crit - radcrit) / critstd[tr]**2
+            lCR = np.cos((o_crit - radcrit) * 2) / critstd[tr]**2
             
             dirkappa_tr = 1 / dirstd[tr] ** 2
             dnoisekappa_tr = 1 / dnoisestd[tr] ** 2
