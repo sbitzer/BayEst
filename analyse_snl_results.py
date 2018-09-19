@@ -15,7 +15,7 @@ import helpers
 import snl_simulators as snlsim
 
 import pyEPABC.parameters as parameters
-from pyEPABC.parameters import exponential, gaussprob
+from pyEPABC.parameters import exponential, gaussprob, zero
 
 import matplotlib.pyplot as plt
 
@@ -23,7 +23,9 @@ import matplotlib.pyplot as plt
 #%% 
 stats = 'hist'
 result = os.path.join(helpers.resultsdir, 
-                      'snl/rotated_directions/201807061824')
+                      'snl/rotated_directions/201809141814')
+result = os.path.join(helpers.resultsdir, 
+                      'snl/rotated_directions/201809172008')
 
 subjects = [int(os.path.basename(f)[1:3]) 
             for f in glob(os.path.join(result, '*%s.log' % stats))]
@@ -38,10 +40,18 @@ with pd.HDFStore(os.path.join(
     S = psamples.loc[R].shape[0]
     
 pars = parameters.parameter_container()
-if 'noisestd' not in fix.keys():
-    pars.add_param('noisestd', 0, 1.2, exponential())
-if 'intstd' not in fix.keys():
-    pars.add_param('intstd', 0, 1.2, exponential())
+if 'diffstd' not in fix.keys():
+    pars.add_param('diffstd', 0, 10, exponential())
+if 'cpsqrtkappa' not in fix.keys():
+    pars.add_param('cpsqrtkappa', 0, 10, zero())
+if 'critstd' not in fix.keys():
+    pars.add_param('critstd', 0, 1, exponential())
+if 'cnoisestd' not in fix.keys():
+    pars.add_param('cnoisestd', 0, 1, exponential())
+if 'dnoisestd' not in fix.keys():
+    pars.add_param('dnoisestd', 0, 1.2, exponential())
+if 'dirstd' not in fix.keys():
+    pars.add_param('dirstd', 0, 1.2, exponential())
 if 'bound' not in fix.keys():
     pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 if 'bias' not in fix.keys():

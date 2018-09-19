@@ -12,6 +12,7 @@ import numpy as np
 import helpers
 from rtmodels import rtmodel
 from rotated_directions import rotated_directions as dirmodel
+from rotated_directions import rotated_directions_diff as dirdiffmodel
 
 import pyEPABC.parameters as parameters
 
@@ -260,9 +261,8 @@ def create_simulator(data, pars, stats='hist', exclude_to=False,
     # first of these indicates clockwise rotation, second anti-clockwise
     choices = [1, -1]
     
-    model = dirmodel(
-        data.tarDir / 180. * np.pi, helpers.dt, 
-        data.tarDir.unique() / 180. * np.pi, data.critDir / 180. * np.pi, 
+    model = dirdiffmodel(
+        {'directions': data.tarDir, 'criteria': data.critDir}, helpers.dt, 
         maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
         choices=choices, ndtdist=ndtdist, **fix)
     

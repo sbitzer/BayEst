@@ -15,20 +15,28 @@ import snl_simulators as snlsim
 
 import snl
 import pyEPABC.parameters as parameters
-from pyEPABC.parameters import exponential, gaussprob
+from pyEPABC.parameters import exponential, gaussprob, zero
 
 import matplotlib.pyplot as plt
 
 
 #%% define parameters and their prior
 ndtdist = 'uniform'
-fix = {'bound': 0.7}
+fix = {'bound': 0.7, 'diffstd': 1000, 'cnoisestd': 1e-12, 'cpsqrtkappa': 2.2}
 
 pars = parameters.parameter_container()
-if 'noisestd' not in fix.keys():
-    pars.add_param('noisestd', 0, 1.2, exponential())
-if 'intstd' not in fix.keys():
-    pars.add_param('intstd', 0, 1.2, exponential())
+if 'diffstd' not in fix.keys():
+    pars.add_param('diffstd', 0, 10, exponential())
+if 'cpsqrtkappa' not in fix.keys():
+    pars.add_param('cpsqrtkappa', 0, 10, zero())
+if 'critstd' not in fix.keys():
+    pars.add_param('critstd', 0, 1, exponential())
+if 'cnoisestd' not in fix.keys():
+    pars.add_param('cnoisestd', 0, 1, exponential())
+if 'dnoisestd' not in fix.keys():
+    pars.add_param('dnoisestd', 0, 1.2, exponential())
+if 'dirstd' not in fix.keys():
+    pars.add_param('dirstd', 0, 1.2, exponential())
 if 'bound' not in fix.keys():
     pars.add_param('bound', 0, 1, gaussprob(width=0.5, shift=0.5))
 if 'bias' not in fix.keys():
