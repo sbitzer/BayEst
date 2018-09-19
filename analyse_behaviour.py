@@ -19,6 +19,9 @@ subjects = helpers.find_available_subjects()
 alldata = pd.concat([helpers.load_subject(sub) for sub in subjects],
                     keys=subjects, names=['subject', 'trial'])
 
+alldata['cond'] = alldata.apply(
+        lambda s: '{}v{}'.format(s.critDir, s.tarDir), axis=1)
+
 
 #%% number of data points per subject
 fig, ax = plt.subplots()
@@ -107,3 +110,20 @@ ax.set_xlabel('error rate difference (fast - slow)')
 
 tval, pval = scipy.stats.ttest_1samp(erate_diff, 0)
 ax.set_title('t = %5.2f, p = %6.4f' % (tval, pval))
+
+
+#%% do errors occur preferrably for certain criteria?
+errors = alldata[alldata.error.astype(bool)]
+
+fig, axes = plt.subplots(1, 3, sharey=True, figsize=[12, 4])
+
+sns.barplot(x='easy', y='error', data=alldata, ax=axes[0]);
+sns.barplot(x="critDir", y="error", data=alldata, ax=axes[1]);
+sns.barplot(x="tarDir", y="error", data=alldata, ax=axes[2]);
+axes[2].tick_params(axis='x', rotation=70)
+fig.tight_layout()
+
+fig, ax = plt.subplots(figsize=[12, 4])
+sns.barplot(x='cond', y='error', data=alldata, ax=ax)
+ax.tick_params(axis='x', rotation=70)
+fig.tight_layout()
