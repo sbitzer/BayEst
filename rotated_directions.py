@@ -1577,9 +1577,8 @@ def gen_response_jitted_diff(
     # unscaled densities for the von Mises mixture in criterion prior
     # I had to precompute these here, because numba breaks with an internal
     # error, if I put this code at the right place inside the parallel for loop
-    rc0 = np.cos(radcrit)
-    rc90 = np.cos(radcrit - np.pi / 2)
-    rc180 = np.cos(radcrit - np.pi)
+    rc0 = np.cos(2 * radcrit)
+    rc90 = np.cos(2 * (radcrit - np.pi / 2))
     
     if trdir.shape[0] == DF:
         use_liks = True
@@ -1628,16 +1627,17 @@ def gen_response_jitted_diff(
             cpkappa = cpsqrtkappa[tr] ** 2
             lpCR = logsumexp_2d(np.stack(
                     (rc0 * cpkappa, 
-                     rc90 * cpkappa,
-                     rc180 * cpkappa)).T, axis=1)[:, 0]
+                     rc90 * cpkappa)).T, axis=1)[:, 0]
             
             # compute evidences for the criterion value by sampling a criterion
             # observation and determining its likelihood for each considered
-            # criterion; note the factor of 2 in np.cos to account for the fact
-            # that criteria wrap around at 180 degree and not at 360
+            # criterion; note: modulo np.pi ensures that the sampled criteria
+            # are in [0, 180) and the factor of 2 in np.cos accounts for the 
+            # corresponding fact that criteria wrap around at 180 degree 
+            # and not at 360
             o_crit = random.vonmisesvariate(
-                    to_rad(trcrit[tr]), 1 / cnoisestd[tr]**2)
-            lCR = np.cos((o_crit - radcrit) * 2) / critstd[tr]**2
+                    to_rad(trcrit[tr]), 1 / cnoisestd[tr]**2) % np.pi
+            lCR = np.cos(2 * (o_crit - radcrit)) / critstd[tr]**2
             
             dirkappa_tr = 1 / dirstd[tr] ** 2
             dnoisekappa_tr = 1 / dnoisestd[tr] ** 2

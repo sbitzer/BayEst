@@ -214,8 +214,8 @@ with the following factors:
 &P(C = c_-) = 1 - P(C = c_+) = \beta\\
 &p(D | C=c_+) \propto \mathcal{HN}(D | \sigma_D^2)\\
 &p(D | C=c_-) \propto \mathcal{HN}(-D | \sigma_D^2)\\
-&p(R | D) \propto \mathcal{M}(R | 0, \kappa_{R}) + \mathcal{M}(R | 90, \kappa_{R}) + \mathcal{M}(R | 180, \kappa_{R})\\
-&p(O^R | R) = \mathcal{M}(O^R | R, \kappa_{OR})\\
+&p(R | D) \propto \mathcal{M}(2R | 0, \kappa_{R}) + \mathcal{M}(2R | 90, \kappa_{R})\\
+&p(O^R | R) = \mathcal{M}(2O^R | R, \kappa_{OR})\\
 &p(M | D, R) = \frac{1}{2}\delta(M = R - D) + \frac{1}{2}\delta(M = R + 180 - D)\\
 &p(O^M | M) = \mathcal{M}(O^M | M, \kappa_{M})
 \end{align}
@@ -223,7 +223,7 @@ where $c_+$ denotes a clockwise choice and $c_-$ an anti-clockwise choice and th
 
 The distribution of the difference is chosen to be proportional to a half-normal distribution with variance $\sigma_D^2$. This can only be proportional, because the difference is only defined on an open interval up to 180 degrees in both directions ($D \in (-180, 180)$). The choice of a half normal will favour differences that are close to 0 meaning that a subject expects hard decisions, but this can be relaxed by choosing large $\sigma_D^2$. 
 
-The distribution over $R$ is a mixture of two von Mises distributions centred on the cardinal directions. This allows us to model an internal expectation of cardinal criterion orientations which we expect to reduce decision times for cardinal criteria. Note that we make this distribution independent from the difference values, because for each difference criterion values occurred with equal probability in the experiment and we don't think that people have any expectations over criterion values in dependence on a difference value. The precision of the von Mises mixture, $\kappa_R$, controls how strongly participants expect cardinal criterion orientations (large $\kappa_R$, strong expectations; $\kappa_R=0$, no expectation, all orientations are deemed equally likely).
+The distribution over $R$ is a mixture of two von Mises distributions centred on the cardinal directions. This allows us to model an internal expectation of cardinal criterion orientations which we expect to reduce decision times for cardinal criteria. The distribution is over $2R$, because $R \in [0, 180)$ and needs to be extended to 360 degrees to comply with the von Mises distribution. Note that we make this distribution independent from the difference values, because for each difference criterion values occurred with equal probability in the experiment and we don't think that people have any expectations over criterion values in dependence on a difference value. The precision of the von Mises mixture, $\kappa_R$, controls how strongly participants expect cardinal criterion orientations (large $\kappa_R$, strong expectations; $\kappa_R=0$, no expectation, all orientations are deemed equally likely).
 
 Once a difference value and a criterion value are known, the motion direction can only take on one of two values, either $M = R - D$, or $M = (R + 180) - D$. The motion direction is not uniquely determined by the difference, because the criterion can either be interpreted as upward or downward motion so that the given difference can result from the given criterion and one of two possible motion directions. $\delta(x)$ is the Dirac delta function and defines the discrete, uniform distribution over the two possible motion directions. 
 
