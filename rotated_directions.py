@@ -1328,6 +1328,161 @@ class rotated_directions_diff(rtmodel):
         
         return info
     
+    def gen_timecourses(self, trind):
+        """Generate time courses of internal model variables.
+        
+        This re-implements the model mechanism in pure Python and is therefore
+        not useful for large-scale model predictions. It's just a tool for 
+        investigating the inference mechanisms implemented by the model for the
+        parameter values currently stored in the model.
+        
+        Returns
+        -------
+        times  - the time points simulated by the model
+        lpD    - log prior over differences (normalised) given choice
+        lpCR   - log prior over criteria (unnormalised)
+        lCR    - log likelihood over criteria for observing the criterion 
+                 presented in the selected trial (unnormalised)
+        lE_OM  - log evidence for motion directions after observing a motion 
+                 direction sample (unnormalised)
+        lE_DR  - log evidence for all combinations of difference and criterion
+                 (unnormalised)
+        lp_rot - log probability over clockwise rotation (normalised)
+        """
+        N = trind.size
+        
+        times = np.arange(0, self.S+1) * self.dt
+        
+        dirkappa = 1 / self.dirstd ** 2
+        dnoisekappa = 1 / self.dnoisestd ** 2
+        cnoisekappa = 1 / self.cnoisestd ** 2
+        critkappa = 1 / self.critstd ** 2
+        
+        radcrit = to_rad(self.criteria)
+        raddiff = to_rad(self.differences)
+        
+        cw = self.differences > 0
+        acw = self.differences < 0
+        
+        # discretised half-normal prior over differences 
+        # (given a particular choice)
+        lpD = np.full((self.DF, 2), -np.inf)
+        lpD[cw, 0] = - raddiff[cw] ** 2 / self.diffstd ** 2
+        lpD[acw, 1] = - raddiff[acw] ** 2 / self.diffstd ** 2
+        lpD -= logsumexp_2d(lpD, axis=0)
+        
+        lpCR = logsumexp_2d(
+                np.c_[np.cos(2 * radcrit), 
+                      np.cos(2 * (radcrit - np.pi / 2))] 
+                * self.cpsqrtkappa ** 2, axis=1)[:, 0]
+        
+        lCR = np.zeros((self.CR, N))
+        lE_OM = np.zeros((self.DF, self.CR, self.S + 1, N))
+        lE_OM[:, :, 0, :] = np.nan
+        lE_DR = np.zeros((self.DF, self.CR, self.S + 1, N))
+        lp_rot = np.zeros((2, self.S + 1, N))
+        lp_rot[:, 0, :] = np.log(np.r_[self.bias, 1 - self.bias])[:, None]
+        for i, tr in enumerate(trind):
+            # for some reason np.random.vonmises goes into very long 
+            # computations for very large kappa (eg. cnoisestd=1e-12), so I
+            # explicitly loop over trials and use random.vonmisesvariate
+            lCR[:, i] = np.cos(2 * (
+                    random.vonmisesvariate(
+                            to_rad(self.Trials['criteria'][tr]),
+                            cnoisekappa) % np.pi
+                    - radcrit)) * critkappa
+                    
+            lE_DR[:, :, 0, i] = np.tile(lpCR + lCR[:, i], (self.DF, 1))
+            
+            for t in range(1, self.S+1):
+                # sample observed motion direction
+                o_dir = random.vonmisesvariate(
+                        to_rad(self.Trials['directions'][tr]),
+                        dnoisekappa)
+                
+                for cr in range(self.CR):
+                    # compute log-evidences for observed direction
+                    lE_OM_cr = np.zeros((self.DF, 2))
+                    for df in range(self.DF):
+                        lE_OM_cr[df, :] = np.cos(o_dir - (
+                                radcrit[cr] + np.c_[0, np.pi] 
+                                - raddiff[df])) * dirkappa - math.log(2)
+                    
+                    lE_OM_cr -= math.log(2)
+                    
+                    lE_OM[:, cr, t, i] = logsumexp_2d(lE_OM_cr, axis=1)[:, 0]
+                    
+                    lE_DR[:, cr, t, i] = (lE_DR[:, cr, t-1, i] 
+                                          + self.dt * lE_OM[:, cr, t, i])
+                    
+                lE_D = logsumexp_2d(lE_DR[:, :, t, i], axis=1)[:, 0]
+                
+                lp_rot[0, t, i] = (logsumexp(lpD[cw, 0] + lE_D[cw])
+                             + math.log(self.bias))
+                lp_rot[1, t, i] = (logsumexp(lpD[acw, 1] + lE_D[acw])
+                             + math.log(1 - self.bias))
+                lp_rot[:, t, i] -= logsumexp(lp_rot[:, t, i])
+                
+            
+        return times, lpD, lpCR, lCR, lE_OM, lE_DR, lp_rot
+    
+    
+    def plot_example_timecourses(self, trind, dvtype='prob', with_bound=True,
+                                 seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
+            
+        times, lpD, lpCR, lCR, lE_OM, lE_DR, lp_rot = self.gen_timecourses(
+                trind)
+        
+        labels = {self.toresponse[0]: 'ambiguous', 
+                  self.choices[0]: 'clockwise', 
+                  self.choices[1]: 'anti-clockwise'}
+        cols = {self.toresponse[0]: 'k', 
+                self.choices[0]: 'C0', 
+                self.choices[1]: 'C1'}
+        
+        if dvtype == 'prob':
+            dv = np.exp(lp_rot[0, :, :])
+        elif dvtype == 'logprob':
+            dv = lp_rot[0, :, :]
+        elif dvtype == 'logprobdiff':
+            dv = lp_rot[0, :, :] - lp_rot[1, :, :]
+        
+        fig, ax = plt.subplots()
+        for c in np.r_[self.toresponse[0], self.choices]:
+            ind = self.correct[trind] == c
+            if ind.sum() > 0:
+                lines = ax.plot(times, dv[:, ind], 
+                                color=cols[c], alpha=.3)
+                lines[0].set_label(labels[c])
+        
+        if with_bound:
+            lower = 1 - self.bound
+            upper = self.bound
+            if dvtype == 'logprob':
+                lower = np.log(lower)
+                upper = np.log(upper)
+            elif dvtype == 'logprobdiff':
+                upper = np.log(upper / (1 - upper))
+                lower = -upper
+                
+            line, = ax.plot(times, np.ones_like(times) * upper, 'k')
+            line, = ax.plot(times, np.ones_like(times) * lower, 'k')
+            line.set_label('bounds')
+        
+        ax.legend(loc='upper left')
+        ax.set_xlabel('time (s)')
+        if dvtype == 'prob':
+            ax.set_ylabel('probability clockwise rotation')
+        elif dvtype == 'logprob':
+            ax.set_ylabel('log-probability clockwise rotation')
+        elif dvtype == 'logprobdiff':
+            ax.set_ylabel('log p(clockwise) - log p(anti-clockwise)')
+        
+        return fig, ax
+    
     
     def plot_dt_ndt_distributions(self, mean=None, cov=None, pars=None, R=30):
         """Plot decision and non-decision time distributions separately.
