@@ -18,6 +18,34 @@ from rtmodels import rtmodel
 import matplotlib.pyplot as plt
 
 
+def identify_model(pars):
+    """Tries to identify model by checking inferred parameters.
+    
+    Returns 
+        'diff' for rotated_directions_diff 
+        'base' for rotated_directions
+    """
+    
+    try:
+        parnames = pars.names
+    except:
+        parnames = np.array(pars)
+    
+    if np.any(np.isin(
+            np.array(['diffstd', 'cpsqrtkappa', 'critstd', 'cnoisestd', 
+                      'dnoisestd']), 
+            parnames)):
+    
+        assert np.all(np.isin(
+                parnames, rotated_directions_diff.parnames))
+    
+        return 'diff'
+    else:
+        assert np.all(np.isin(
+                parnames, rotated_directions.parnames))
+        
+        return 'base'
+
 class rotated_directions(rtmodel):
 
     @property

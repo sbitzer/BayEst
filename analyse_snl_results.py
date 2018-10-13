@@ -13,6 +13,7 @@ from glob import glob
 
 import helpers
 import snl_simulators as snlsim
+from rotated_directions import identify_model
 
 import pyEPABC.parameters as parameters
 from pyEPABC.parameters import exponential, gaussprob, zero
@@ -39,17 +40,20 @@ with pd.HDFStore(os.path.join(
     R = psamples.index.get_level_values('round').unique().size
     S = psamples.loc[R].shape[0]
     
+modelstr = identify_model(np.r_[psamples.columns, fix.index])
+
 pars = parameters.parameter_container()
-if 'diffstd' not in fix.keys():
-    pars.add_param('diffstd', 0, 10, exponential())
-if 'cpsqrtkappa' not in fix.keys():
-    pars.add_param('cpsqrtkappa', 0, 10, zero())
-if 'critstd' not in fix.keys():
-    pars.add_param('critstd', 0, 1, exponential())
-if 'cnoisestd' not in fix.keys():
-    pars.add_param('cnoisestd', 0, 1, exponential())
-if 'dnoisestd' not in fix.keys():
-    pars.add_param('dnoisestd', 0, 1.2, exponential())
+if modelstr == 'diff':
+    if 'diffstd' not in fix.keys():
+        pars.add_param('diffstd', 0, 10, exponential())
+    if 'cpsqrtkappa' not in fix.keys():
+        pars.add_param('cpsqrtkappa', 0, 10, zero())
+    if 'critstd' not in fix.keys():
+        pars.add_param('critstd', 0, 1, exponential())
+    if 'cnoisestd' not in fix.keys():
+        pars.add_param('cnoisestd', 0, 1, exponential())
+    if 'dnoisestd' not in fix.keys():
+        pars.add_param('dnoisestd', 0, 1.2, exponential())
 if 'dirstd' not in fix.keys():
     pars.add_param('dirstd', 0, 1.2, exponential())
 if 'bound' not in fix.keys():
