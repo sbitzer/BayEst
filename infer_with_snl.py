@@ -22,13 +22,14 @@ import matplotlib.pyplot as plt
 
 #%% define parameters and their prior
 ndtdist = 'uniform'
-fix = {'bound': 0.7, 'diffstd': 1000, 'cnoisestd': 1e-12, 'cpsqrtkappa': 2.2}
+fix = {'bound': 0.7, 'diffstd': 1000, 'cnoisestd': 1e-12, 'critstd': 1.0,
+       'cpsqrtkappa': 0}
 
 pars = parameters.parameter_container()
 if 'diffstd' not in fix.keys():
     pars.add_param('diffstd', 0, 10, exponential())
 if 'cpsqrtkappa' not in fix.keys():
-    pars.add_param('cpsqrtkappa', 0, 10, zero())
+    pars.add_param('cpsqrtkappa', 1, 1, zero())
 if 'critstd' not in fix.keys():
     pars.add_param('critstd', 0, 1, exponential())
 if 'cnoisestd' not in fix.keys():

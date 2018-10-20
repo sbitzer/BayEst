@@ -21,9 +21,10 @@ import matplotlib.pyplot as plt
 stats = 'hist'
 
 result = os.path.join(helpers.resultsdir, 
-                      'snl/rotated_directions/201809141814')
-result = os.path.join(helpers.resultsdir, 
-                      'snl/rotated_directions/201809172008')
+                      'snl/rotated_directions/201810090117')
+
+comparison_result = os.path.join(
+        helpers.resultsdir, 'snl/rotated_directions/201807061824')
 
 subjects = [int(os.path.basename(f)[1:3]) 
             for f in glob(os.path.join(result, '*%s.log' % stats))]
@@ -53,6 +54,10 @@ for sub in subjects:
     choices_post, rts_post, data, model = (
             snlsim.generate_posterior_predictive_data(result, sub, stats))
     
+    if len(subjects) == 1 and comparison_result:
+        choices_post_comp, rts_post_comp, data_comp, model_comp = (
+            snlsim.generate_posterior_predictive_data(
+                    comparison_result, sub, stats))
     
     
     #%% check fit to differences in median RT and accuracy across difficulties
@@ -66,6 +71,28 @@ for sub in subjects:
     
 print('done.')
 
+
+#%% 
+if len(subjects) == 1:
+    fig, axes = plt.subplots(1, 2, sharey=True, sharex=True)
+    
+    is_cardinal = lambda deg: deg == 0 | deg == 90
+    
+    for ax, cond, label in zip(
+            axes, [data.easy, data.critDir.map(is_cardinal)], 
+            ['easy - hard', 'cardinal - oblique']):
+        ax = helpers.plot_diffs(
+                choices_post, rts_post, cond, model.correct, data, 
+                label=label, ax=ax)
+    
+    if comparison_result:
+        for ax, cond, label in zip(
+                axes, [data_comp.easy, data_comp.critDir.map(is_cardinal)], 
+                ['easy - hard', 'cardinal - oblique']):
+            ax = helpers.plot_diffs(
+                    choices_post_comp, rts_post_comp, cond, model_comp.correct, 
+                    data_comp, label=label, ax=ax)
+    
 
 #%% 
 ddiff = diff_post.copy()
