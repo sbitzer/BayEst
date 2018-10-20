@@ -7,9 +7,11 @@ Created on Tue May 15 10:06:41 2018
 """
 
 import os, re
+from glob import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from rotated_directions import identify_model
 
 datadir = "../data/behaviour/Data/raw"
 resultsdir = "../inf_results/behaviour"
@@ -122,3 +124,51 @@ def plot_diffs(choices, rts, condind, correct, data, label='', in_diffs=False,
     ax.set_xticklabels(['accuracy', 'median RT'])
     
     return ax
+
+
+def print_result_info(resultnum, stats='hist'):
+    result = os.path.join(resultsdir, 'snl', 'rotated_directions', resultnum)
+    
+    if not os.path.isdir(result):
+        raise ValueError('Could not find the given result!')
+    
+    subjects = sorted([int(os.path.basename(f)[1:3]) 
+            for f in glob(os.path.join(result, '*%s.log' % stats))])
+    
+    info  = 'Result: {}\n'.format(resultnum)
+    info += '=' * (len(info) - 1) + '\n\n'
+    
+    info += 'subjects\n'
+    info += '--------\n'
+    info += '{}\n\n'.format(subjects.__str__())
+    
+    subject = subjects[0]
+    
+    with pd.HDFStore(os.path.join(
+            result, 's{:02d}_{}.h5'.format(subject, stats)), 'r') as store:
+        info += 'data options\n'
+        info += '------------\n'
+        info += store.data_info.iloc[1:].__str__()[:-13]
+        info += '\n'
+        
+        info += 'model\n'
+        info += '-----\n'
+        info += identify_model(list(store.parameters.columns) 
+                               + list(store.fix.index)) + '\n\n'
+        
+        info += 'ndtdist = {}\n\n'.format(store.ndtdist[0])
+        
+        info += 'fix\n'
+        info += '---\n'
+        info += store.fix.__str__()[:-14]
+        info += '\n'
+        
+        info += 'priors\n'
+        info += '------\n'
+        info += pd.concat(
+                [store.prior_mu, pd.Series(
+                        np.sqrt(np.diag(store.prior_cov)), 
+                        index=store.prior_mu.index)], 
+                axis=1).__str__()[54:]
+    
+    print(info)
