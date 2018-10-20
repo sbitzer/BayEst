@@ -9,6 +9,7 @@ Created on Tue May 15 10:06:41 2018
 import os, re
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 datadir = "../data/behaviour/Data/raw"
 resultsdir = "../inf_results/behaviour"
@@ -81,3 +82,43 @@ def diff_diff(ch, rt, easy, correct):
     
     return (ch_corr[easy, :].mean(axis=0) - ch_corr[~easy, :].mean(axis=0), 
             np.median(rt[easy, :], axis=0) - np.median(rt[~easy, :], axis=0))
+    
+    
+def plot_diffs(choices, rts, condind, correct, data, label='', in_diffs=False, 
+               ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+        
+    match = re.match(r'diffbox_(\d+)', ax.aname)
+    if match:
+        add = int(match.group(1))
+        ax.aname = 'diffbox_{}'.format(add+1)
+    else:
+        ax.aname = 'diffbox_1'
+        add = 0
+        
+    if in_diffs:
+        diffacc = choices
+        diffmed = rts
+    else:
+        diffacc, diffmed = diff_diff(
+                choices, rts, condind, correct)
+    
+    positions = np.r_[1, 2] + 0.2 * add
+        
+    ax.boxplot(np.c_[diffacc, diffmed], positions=positions)
+    
+    diffacc, diffmed = diff_diff(
+            data.response, data.RT, condind, correct)
+    
+    ax.plot(np.r_[1, 2], np.r_[diffacc[0], diffmed[0]], '*', ms=10, 
+            color='C0')
+    
+    if add:
+        ax.set_xticks([1, 2])
+    else:
+        ax.set_ylabel('difference ({})'.format(label))
+    
+    ax.set_xticklabels(['accuracy', 'median RT'])
+    
+    return ax

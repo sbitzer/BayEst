@@ -197,20 +197,17 @@ if len(subjects) == 1:
     
     
     #%% check fit to differences in median RT and accuracy across difficulties
-    fig, ax = plt.subplots()
+    #   and oblique / cardinal criteria
+    fig, axes = plt.subplots(1, 2, sharey=True, sharex=True)
     
-    diffacc, diffmed = helpers.diff_diff(
-            choices_post, rts_post, data.easy, sim.model.correct)
+    is_cardinal = lambda deg: deg == 0 | deg == 90
     
-    ax.boxplot(np.c_[diffacc, diffmed])
-    
-    diffacc, diffmed = helpers.diff_diff(
-            data.response, data.RT, data.easy, sim.model.correct)
-    
-    ax.plot(np.r_[1, 2], np.r_[diffacc[0], diffmed[0]], '*', ms=10, color='C0')
-    
-    ax.set_xticklabels(['accuracy', 'median RT'])
-    ax.set_ylabel('difference (easy - hard)')
+    for ax, cond, label in zip(axes, 
+                               [data.easy, data.critDir.map(is_cardinal)], 
+                               ['easy - hard', 'cardinal - oblique']):
+        ax = helpers.plot_diffs(
+                choices_post, rts_post, cond, sim.model.correct, data, 
+                label=label, ax=ax)
     
     
     #%% compare dt and ndt distributions for most likely posterior parameters
