@@ -7,6 +7,8 @@ Created on Mon Jul  9 17:48:53 2018
 """
 
 #%% imports
+import os
+import pandas as pd
 import numpy as np
 
 import helpers
@@ -287,3 +289,57 @@ def create_simulator(data, pars, stats='hist', exclude_to=False,
         raise ValueError('Unknown type of summary statistics!')
     
     return Simulator(model, pars), stats, data
+
+
+#%% helper generating posterior predictive samples from a stored result
+def generate_posterior_predictive_data(resultpath, subject, stats):
+    with pd.HDFStore(os.path.join(
+            resultpath, 's%02d_%s.h5' % (subject, stats)), 'r') as store:
+        
+        exclude_to = store['data_info']['exclude_to']
+        censor_late = store['data_info']['censor_late']
+        ndtdist = store['ndtdist'][0]
+        
+        psamples = store['parameters']
+        
+        fix = store['fix']
+    
+    R = psamples.index.get_level_values('round').unique().size
+    
+    pars = create_default_params(psamples.columns)
+    
+    data = helpers.load_subject(subject, exclude_to=exclude_to, 
+                                    censor_late=censor_late)
+    
+    sim, stat, data = create_simulator(
+            data, pars, stats, exclude_to, ndtdist, fix)
+    
+    pars_post = psamples.loc[R]
+    
+    resp = sim.sim(pars_post)
+    
+    choices = resp[:, 0].reshape(sim.model.L, pars_post.shape[0], order='F')
+    rts = resp[:, 1].reshape(sim.model.L, pars_post.shape[0], order='F')
+    
+    return choices, rts, data, sim.model
+
+
+def create_default_params(parnames):
+    pars = parameters.parameter_container()
+    
+    for pname in parnames:
+        if pname in ['diffstd', 'critstd', 'dnoisestd', 'cnoisestd', 
+                     'dnoisestd', 'dirstd', 'ndtspread', 'noisestd', 
+                     'intstd']:
+            pars.add_param(pname, 0, 1, parameters.exponential())
+        elif pname == 'bound':
+            pars.add_param(pname, 0, 1, parameters.gaussprob(width=0.5, 
+                                                             shift=0.5))
+        elif pname in ['bias', 'lapseprob', 'lapsetoprob']:
+            pars.add_param(pname, 0, 1, parameters.gaussprob())
+        elif pname in ['cpsqrtkappa']:
+            pars.add_param(pname, 0, 1, parameters.zero())
+        else:
+            pars.add_param(pname, 0, 1)
+            
+    return pars
