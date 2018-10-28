@@ -639,8 +639,8 @@ class rotated_directions(rtmodel):
             # divide the job in smaller batches and run those
         
             # determine batch size for given memory limit
-            NB = math.floor(NP / self.estimate_memory_for_gen_response(NP) *
-                            self.memlim)
+            NB = int(math.floor(NP / self.estimate_memory_for_gen_response(NP) 
+                                * self.memlim))
             
             choices = np.zeros(NP, dtype=np.int8)
             rts = np.zeros(NP)
@@ -1652,8 +1652,8 @@ class rotated_directions_diff(rtmodel):
             # divide the job in smaller batches and run those
         
             # determine batch size for given memory limit
-            NB = math.floor(NP / self.estimate_memory_for_gen_response(NP) *
-                            self.memlim)
+            NB = int(math.floor(NP / self.estimate_memory_for_gen_response(NP) 
+                                * self.memlim))
             
             choices = np.zeros(NP, dtype=np.int8)
             rts = np.zeros(NP)
