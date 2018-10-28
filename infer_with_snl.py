@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 #%% define parameters and their prior
 ndtdist = 'uniform'
-fix = {'bound': 0.7, 'diffstd': 1000, 'cnoisestd': 1e-12, 'critstd': 1.0,
+fix = {'bound': 0.7, 'diffstd': 1000, 'cnoisestd': 1e-12,
        'cpsqrtkappa': 0}
 
 pars = parameters.parameter_container()
