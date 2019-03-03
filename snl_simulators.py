@@ -292,21 +292,40 @@ def create_simulator(data, pars, stats='hist', exclude_to=False,
 
 
 #%% helper generating posterior predictive samples from a stored result
-def generate_posterior_predictive_data(resultpath, subject, stats):
-    with pd.HDFStore(os.path.join(
-            resultpath, 's%02d_%s.h5' % (subject, stats)), 'r') as store:
+def generate_posterior_predictive_data(resultpath, subject, stats, 
+                                       store_rw='r+'):
+    """Generating, reading and writing posterior predicitive data.
+    
+    store_rw : str
+        'r' - read from store, when possible
+        'r+' - read from store, when possible, write result to store, when no
+               previous result in store
+        'w' - write result to store, ignore previous results
+        '' - ignore store, neither read, nor write
+    """
+    hfile = os.path.join(resultpath, 's%02d_%s.h5' % (subject, stats))
+    with pd.HDFStore(hfile, 'r') as store:
+        pars = create_default_params(store['parameters'].columns)
         
+        if store_rw.startswith('r'):
+            if '/choices_post' in store.keys() and '/rts_post' in store.keys():
+                choices = store.choices_post
+                rts = store.rts_post
+                store_rw = 'r'
+            else:
+                psamples = store['parameters']
+                if store_rw == 'r+':
+                    store_rw = 'w'
+                else:
+                    store_rw = 'r'
+        else:
+            psamples = store['parameters']
+            
         exclude_to = store['data_info']['exclude_to']
         censor_late = store['data_info']['censor_late']
         ndtdist = store['ndtdist'][0]
         
-        psamples = store['parameters']
-        
         fix = store['fix']
-    
-    R = psamples.index.get_level_values('round').unique().size
-    
-    pars = create_default_params(psamples.columns)
     
     data = helpers.load_subject(subject, exclude_to=exclude_to, 
                                     censor_late=censor_late)
@@ -314,12 +333,26 @@ def generate_posterior_predictive_data(resultpath, subject, stats):
     sim, stat, data = create_simulator(
             data, pars, stats, exclude_to, ndtdist, fix)
     
-    pars_post = psamples.loc[R]
+    # will fail with NameError when psamples undefined
+    try:
+        R = psamples.index.get_level_values('round').unique().size
+        pars_post = psamples.loc[R]
+        
+        resp = sim.sim(pars_post)
+        
+        choices = resp[:, 0].reshape(sim.model.L, pars_post.shape[0], order='F')
+        rts = resp[:, 1].reshape(sim.model.L, pars_post.shape[0], order='F')
+    except NameError:
+        pass
     
-    resp = sim.sim(pars_post)
-    
-    choices = resp[:, 0].reshape(sim.model.L, pars_post.shape[0], order='F')
-    rts = resp[:, 1].reshape(sim.model.L, pars_post.shape[0], order='F')
+    if store_rw == 'w':
+        with pd.HDFStore(hfile, 'r+') as store:
+            store['choices_post'] = pd.DataFrame(
+                    choices, index=data.index, columns=pars_post.index,
+                    dtype=int)
+            store['rts_post'] = pd.DataFrame(
+                    rts, index=data.index, columns=pars_post.index,
+                    dtype=float)
     
     return choices, rts, data, sim.model
 
