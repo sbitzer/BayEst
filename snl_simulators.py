@@ -11,6 +11,8 @@ import os
 import pandas as pd
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 import helpers
 from rtmodels import rtmodel
 from rotated_directions import identify_model
@@ -376,3 +378,69 @@ def create_default_params(parnames):
             pars.add_param(pname, 0, 1)
             
     return pars
+
+
+def estimate_posterior_fit(resultpath, subjects, stats, 
+                           within_deviance=lambda x: np.sum(x ** 2, axis=1), 
+                           across_deviance=lambda x: np.sum(np.abs(x), axis=0),
+                           compute_easyhard=True, show=False):
+    """Estimates goodness of fit across samples from posterior.
+    
+    The measure used can be defined by the user. Returned will be
+    `across_deviance(within_deviance(posterior_sample - observation))` where
+    within_deviance aggregates across dimensions of a single observation and
+    across_deviance aggregates across samples from the posterior. So 
+    within_deviance has to operate on columns and across_deviance operates on
+    rows.
+    """
+    try:
+        len(subjects)
+    except TypeError:
+        subjects = [subjects]
+        
+    fit = []
+    easyhard = []
+    for sub in subjects:
+        hfile = os.path.join(resultpath, 's%02d_%s.h5' % (sub, stats))
+        with pd.HDFStore(hfile, 'r') as store:
+            pars = create_default_params(store['parameters'].columns)
+            exclude_to = store['data_info']['exclude_to']
+            censor_late = store['data_info']['censor_late']
+            ndtdist = store['ndtdist'][0]
+            fix = store['fix']
+            R = store['parameters'].index.get_level_values('round').unique().size
+            
+            simdata = store['simdata'].loc[R]
+            
+        data = helpers.load_subject(sub, exclude_to=exclude_to, 
+                                censor_late=censor_late)
+
+        sim, stat, data = create_simulator(
+                data, pars, stats, exclude_to, ndtdist, fix)
+        
+        obs_xs = stat.calc(data[['response', 'RT']])
+        
+        fit.append(across_deviance(within_deviance(simdata - obs_xs)))
+        
+        if compute_easyhard:
+            N2 = obs_xs.size // 2
+            eh = [within_deviance(obs_xs[None, :N2] - obs_xs[None, N2:])]
+            eh.append(within_deviance(simdata.values[:, :N2] 
+                                      - simdata.values[:, N2:]))
+            eh.append(across_deviance(eh[1] - eh[0]))
+        else:
+            eh = []
+        easyhard.append(eh)
+        
+        if show:
+            fig, ax = plt.subplots()
+            
+            ax.boxplot(simdata.values)
+            ax.plot(np.arange(obs_xs.size) + 1, obs_xs, '*', color='C0')
+    
+    if np.isscalar(fit[0]):
+        fit = pd.Series(fit, index=subjects)
+    else:
+        fit = pd.DataFrame(fit, index=subjects)
+    
+    return fit, pd.Series(easyhard, index=subjects)
