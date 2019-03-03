@@ -7,7 +7,9 @@ Created on Mon Jul  9 17:48:53 2018
 """
 
 #%% imports
-import os
+import os, glob
+import warnings
+
 import pandas as pd
 import numpy as np
 
@@ -357,6 +359,25 @@ def generate_posterior_predictive_data(resultpath, subject, stats,
                     dtype=float)
     
     return choices, rts, data, sim.model
+
+
+def add_posterior_predictive_data(resultdir, stats='hist'):
+    """Generate posterior predictive data for all subjects in result and store
+    in results file.
+    """
+    subjects = [int(os.path.basename(f)[1:3]) 
+                for f in glob(os.path.join(resultdir, '*%s.log' % stats))]
+    
+    for sub in subjects:
+        print('\rProcessing subject %2d ...' % sub)
+        
+        # generate posterior predictive data
+        try:
+            choices_post, rts_post, data, model = (
+                    generate_posterior_predictive_data(
+                            resultdir, sub, stats, 'r+'))
+        except IOError:
+            warnings.warn("Skipping subject {} due to IOError!".format(sub))
 
 
 def create_default_params(parnames):
