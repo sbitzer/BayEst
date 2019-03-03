@@ -73,6 +73,9 @@ def load_subject(sub, exclude_to=False, censor_late=True):
 def diff_diff(ch, rt, easy, correct):
     """Computes the difference in accuracy and median RT between two 
        difficulty levels."""
+    ch = np.array(ch)
+    rt = np.array(rt)
+       
     if ch.ndim == 1 and rt.ndim == 1:
         ch = ch[:, None]
         rt = rt[:, None]
