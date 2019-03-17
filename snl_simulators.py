@@ -419,27 +419,69 @@ def estimate_posterior_fit(resultpath, subjects, stats,
     except TypeError:
         subjects = [subjects]
         
+    hddmresult = 'hddm' in resultpath
+        
     fit = []
     easyhard = []
     for sub in subjects:
-        hfile = os.path.join(resultpath, 's%02d_%s.h5' % (sub, stats))
-        with pd.HDFStore(hfile, 'r') as store:
-            pars = create_default_params(store['parameters'].columns)
-            exclude_to = store['data_info']['exclude_to']
-            censor_late = store['data_info']['censor_late']
-            ndtdist = store['ndtdist'][0]
-            fix = store['fix']
-            R = store['parameters'].index.get_level_values('round').unique().size
-            
-            simdata = store['simdata'].loc[R]
+        if hddmresult:
+            with pd.HDFStore(resultpath, 'r') as store:
+                opts = store['scalar_opt']
+                exclude_to = opts.exclude_to
+                censor_late = opts.censor_late
+                
+                # dummy variables for creation of stat object
+                pars = create_default_params(['bias', 'noisestd'])
+                ndtdist = 'uniform'
+                fix = pd.Series({'bias': 0})
+        else:
+            hfile = os.path.join(resultpath, 's%02d_%s.h5' % (sub, stats))
+            with pd.HDFStore(hfile, 'r') as store:
+                pars = create_default_params(store['parameters'].columns)
+                exclude_to = store['data_info']['exclude_to']
+                censor_late = store['data_info']['censor_late']
+                ndtdist = store['ndtdist'][0]
+                fix = store['fix']
+                try:
+                    R = (store['parameters'].index
+                         .get_level_values('round').unique().size)
+                
+                # this happened when opening a file saved in python2 in python3
+                except KeyError:
+                    R = (store['parameters'].index
+                         .get_level_values(np.bytes_('round')).unique().size)
+                
+                simdata = store['simdata'].loc[R]
             
         data = helpers.load_subject(sub, exclude_to=exclude_to, 
-                                censor_late=censor_late)
+                                    censor_late=censor_late)
 
         sim, stat, data = create_simulator(
                 data, pars, stats, exclude_to, ndtdist, fix)
         
         obs_xs = stat.calc(data[['response', 'RT']])
+        
+        if hddmresult:
+            with pd.HDFStore(resultpath, 'r') as store:
+                simdata = store.select('ppc_data', 'subject=sub')
+                
+            simdata.sort_index(inplace=True)
+                
+            # need to set index for easy trials, because the orders of trials
+            # differs in the hddm result from the originally loaded data
+            stat.easy = simdata.loc[(sub, 0), 'easy'].values
+                
+            simdata = simdata[['response', 'rt']]
+            
+            # convert back into -1, 1 coding of response, see infer_HDDM.py
+            simdata['response'] = simdata['response'] * 2 - 1
+            
+            # convert posterior predictive samples to summary statistics 
+            # samples, but put response in right format and make sure that
+            # 'easy' association of trials is correct
+            simdata = pd.DataFrame(np.concatenate(
+                    [stat.calc(simdata.loc[(sub, sa)])[None, :] for
+                     sa in simdata.index.get_level_values('sample').unique()]))
         
         fit.append(across_deviance(within_deviance(simdata - obs_xs)))
         
