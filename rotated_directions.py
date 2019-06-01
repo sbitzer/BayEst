@@ -64,7 +64,7 @@ class rotated_directions(rtmodel):
     def criteria(self, crit):
         crit = np.array(crit)
         
-        if np.isscalar(crit):
+        if crit.ndim == 0:
             self._criteria = crit * np.ones(self.L)
         elif crit.ndim == 1:
             self._criteria = crit
@@ -151,25 +151,28 @@ class rotated_directions(rtmodel):
     def gen_correct(self):
         """Tries to figure out correct choice from directions and criteria."""
         
-        correct = np.zeros(self.L)
-        for tr in range(self.L):
-            if self.use_features:
-                # determine average direction in trial from stored features
-                direction = np.atan2(np.sin(self._Trials[:, tr]).sum(), 
-                                     np.cos(self._Trials[:, tr]).sum())
-            else:
-                direction = self.directions[self._Trials[tr]]
-            direction = np.atleast_1d(direction)
-            
-            cw, acw, ontop, between = get_rotations(direction, 
-                                                    self.criteria[tr])
-            
-            if cw[0]:
-                correct[tr] = self.choices[0]
-            elif acw[0]:
-                correct[tr] = self.choices[1]
-            else:
-                correct[tr] = self.toresponse[0]
+        if self.use_liks:
+            correct = np.full(self.L, np.nan)
+        else:
+            correct = np.zeros(self.L)
+            for tr in range(self.L):
+                if self.use_features:
+                    # determine average direction in trial from stored features
+                    direction = np.atan2(np.sin(self._Trials[:, tr]).sum(),
+                                         np.cos(self._Trials[:, tr]).sum())
+                else:
+                    direction = self.directions[self._Trials[tr]]
+                direction = np.atleast_1d(direction)
+                
+                cw, acw, ontop, between = get_rotations(direction,
+                                                        self.criteria[tr])
+                
+                if cw[0]:
+                    correct[tr] = self.choices[0]
+                elif acw[0]:
+                    correct[tr] = self.choices[1]
+                else:
+                    correct[tr] = self.toresponse[0]
             
         self._correct = correct
         
@@ -177,48 +180,62 @@ class rotated_directions(rtmodel):
     def use_features(self):
         """Whether the model uses observed features as input, or just stored 
            directions."""
-        if self._Trials.ndim == 1:
-            return False
-        else:
-            return True
+        return True if self._Trials.ndim == 2 else False
+        
+    @property
+    def use_liks(self):
+        """Whether the model uses pre-computed log-likelihoods as input."""
+        return True if self._Trials.ndim == 3 else False
     
     @property
     def Trials(self):
         """Trial information used by the model.
         
-        Either a 1D (use_features=False), or 2D (use_features=True) numpy array.
+        Either a 1D, or 2D (use_features=True), or 3D (use_liks=True)
+        numpy array.
+        
         When 1D, Trials contains the code of the correct choice in that trial.
         When 2D, Trials contains the stream of feature values that the subject
-        may have seen in all the trials of the experiment. Then,
-            S, L = Tials.shape
-        where S is the length of the sequence in each trial
+                 may have seen in all the trials of the experiment. Then,
+                     S, L = Tials.shape
+                 where S is the length of the sequence in each trial
+        When 3D, Trials contains pre-computed likelihood values. Then,
+                     S, D, L = Tials.shape
+                 where D is the number of directions considered in the model
         """
-        if self.use_features:
+        if self.use_features or self.use_liks:
             return self._Trials
         else:
             return self.directions[self._Trials]
         
     @Trials.setter
     def Trials(self, Trials):
-        # ensure that Trials is array and is within [0, 2*pi]
-        Trials = np.array(Trials) % (2 * np.pi)
+        Trials = np.array(Trials)
         
-        if Trials.ndim == 2:
+        # if Trials is log-likelihoods
+        if Trials.ndim == 3:
+            # don't need to do anymore than just set Trials internally
             self._Trials = Trials
-            S, self._L = Trials.shape
-        elif Trials.ndim == 1:
-            # check that Trials only contains valid directions
-            if np.all(np.isin(np.unique(Trials), self.directions)):
-                # transform to indices into self.directions
-                self._Trials = np.array([
-                        np.flatnonzero(self.directions == i)[0] 
-                        for i in Trials])
-                self._L = len(Trials)
-            else:
-                raise ValueError('Trials may only contain valid choice codes' +
-                                 ' when features are not used.')
         else:
-            raise ValueError('Trials has unknown format, please check!')
+            # ensure that Trials is within [0, 2*pi]
+            Trials = np.array(Trials) % (2 * np.pi)
+            
+            if Trials.ndim == 2:
+                self._Trials = Trials
+            elif Trials.ndim == 1:
+                # check that Trials only contains valid directions
+                if np.all(np.isin(np.unique(Trials), self.directions)):
+                    # transform to indices into self.directions
+                    self._Trials = np.array([
+                            np.flatnonzero(self.directions == i)[0]
+                            for i in Trials])
+                else:
+                    raise ValueError('Trials may only contain valid choice codes' +
+                                     ' when features are not used.')
+            else:
+                raise ValueError('Trials has unknown format, please check!')
+        
+        self._L = Trials.shape[-1]
         
         if not self._during_init:
             self.gen_correct()
@@ -227,7 +244,7 @@ class rotated_directions(rtmodel):
     @property
     def S(self):
         """Number of time steps maximally simulated by the model."""
-        if self.Trials.ndim == 2:
+        if self.Trials.ndim > 1:
             return self.Trials.shape[0]
         else:
             # the + 1 ensures that time outs can be generated
@@ -279,16 +296,10 @@ class rotated_directions(rtmodel):
         self.directions = directions
         
         # Trial information used by the model.
-        self.Trials = np.array(Trials)
+        self.Trials = Trials
         
         # criterion orientations
         self.criteria = criteria
-        
-        # figure out the correct choice in each trial
-        self.gen_correct()
-        
-        # check whether design is balanced (and warn if not)
-        self.check_balance()
         
         # Prior probabilities over directions.
         if prior is None:
@@ -329,6 +340,12 @@ class rotated_directions(rtmodel):
             
         # Probability that a lapse will be timed out.
         self.lapsetoprob = lapsetoprob
+        
+        # figure out the correct choice in each trial
+        self.gen_correct()
+        
+        # check whether design is balanced (and warn if not)
+        self.check_balance()
         
         self._during_init = False
         
@@ -400,20 +417,23 @@ class rotated_directions(rtmodel):
             cw, acw, ontop, between = get_rotations(self.directions, 
                                                     self.criteria[tr])
             
-            # sample feature values (observed directions)
-            if self.use_features:
-                features = self.Trials[:, tr]
+            if self.use_liks:
+                logliks[:, :, i] = self.Trials[:, :, i] / self.intstd ** 2
             else:
-                features = np.full(self.S-1, self.directions[self._Trials[tr]])
-            # add von Mises noise
-            features = (
-                    np.random.vonmises(0, 1 / self.noisestd ** 2, self.S-1) 
-                    + features) % (2 * np.pi)
-            
-            # unnormalised log-likelihood values
-            logliks[:, :, i] = (
-                    np.cos(features[:, None] - self.directions[None, :]) 
-                    / self.intstd ** 2)
+                # sample feature values (observed directions)
+                if self.use_features:
+                    features = self.Trials[:, tr]
+                else:
+                    features = np.full(self.S-1, self.directions[self._Trials[tr]])
+                # add von Mises noise
+                features = (
+                        np.random.vonmises(0, 1 / self.noisestd ** 2, self.S-1)
+                        + features) % (2 * np.pi)
+                
+                # unnormalised log-likelihood values
+                logliks[:, :, i] = (
+                        np.cos(features[:, None] - self.directions[None, :])
+                        / self.intstd ** 2)
             
             # unnormalised log-posterior values
             logpost[1:, :, i] = self.dt * logliks[:, :, i]
@@ -689,11 +709,18 @@ class rotated_directions(rtmodel):
                     allpars[name] = np.full(N, allpars[name], dtype=float)
             
             # select input features
-            if self.use_features:
-                features = self.Trials[:, trind]
+            if self.use_liks:
+                features = self.Trials[:, :, trind]
             else:
-                features = self.directions[self._Trials[trind]]
-                features = np.tile(features, (self.S, 1))
+                if self.use_features:
+                    features = self.Trials[:, trind]
+                else:
+                    features = self.directions[self._Trials[trind]]
+                    features = np.tile(features, (self.S, 1))
+                
+                # expand to 3D so that it's 3D in all cases, because numba
+                # doesn't work with varying dimensions
+                features = features[:, None, :]
                 
             # call the compiled function
             choices, rts = self.gen_response_jitted(
@@ -733,7 +760,13 @@ def gen_response_jitted_dir(
     
     D = len(directions)
     C = len(choices)
-    S, N = features.shape
+    
+    S, D2, N = features.shape
+    
+    if D2 == D:
+        use_liks = True
+    else:
+        use_liks = False
     
     choices_out = np.full(N, toresponse[0], dtype=np.int8)
     rts = np.full(N, toresponse[1], np.float64)
@@ -777,14 +810,22 @@ def gen_response_jitted_dir(
                     # can use pre-computed bound value
                     boundval = boundvals[t]
                 
-                # add noise to feature
-                noisy_feature = random.vonmisesvariate(features[t, tr],
-                        1 / noisestd[tr]**2)
+                if not use_liks:
+                    # add noise to feature
+                    noisy_feature = random.vonmisesvariate(features[t, 0, tr],
+                            1 / noisestd[tr]**2)
                 
                 # compute log-probabilities of directions
                 for d in range(D):
-                    logpost[d] += dt * (math.cos(noisy_feature - directions[d]) 
-                                   / intstd[tr]**2)
+                    if use_liks:
+                        logpost[d] += dt * (
+                                random.normalvariate(features[t, d, tr],
+                                                     noisestd[tr])
+                                / intstd[tr] ** 2)
+                    else:
+                        logpost[d] += dt * (
+                                math.cos(noisy_feature - directions[d])
+                                / intstd[tr]**2)
                         
                 # normalise
                 logprobs = logpost - logsumexp(logpost)

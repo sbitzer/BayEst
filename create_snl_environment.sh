@@ -17,7 +17,7 @@ ln -s $DATA_DIR_PREFIX data/behaviour
 mkdir -p inf_results/behaviour/snl/rotated_directions
 
 conda create -c conda-forge -n $SNL_NAME python=2.7 mkl=2017 mkl-service \
-    theano ipython scipy pandas pytables numba seaborn gxx_linux-64
+    theano ipython scipy pandas pytables numba seaborn gxx_linux-64 pytest
 
 source activate $SNL_NAME
 
