@@ -710,7 +710,7 @@ class rotated_directions(rtmodel):
             
             # select input features
             if self.use_liks:
-                features = self.Trials[:, :, trind]
+                features = self.Trials
             else:
                 if self.use_features:
                     features = self.Trials[:, trind]
@@ -724,7 +724,8 @@ class rotated_directions(rtmodel):
                 
             # call the compiled function
             choices, rts = self.gen_response_jitted(
-                    features, allpars, self.criteria[trind], changing_bound)
+                    features, allpars, self.criteria[trind], changing_bound,
+                    trind)
                 
             # transform choices to those expected by user, if necessary
             if user_code:
@@ -737,7 +738,8 @@ class rotated_directions(rtmodel):
         return choices, rts
         
         
-    def gen_response_jitted(self, features, allpars, criteria, changing_bound):
+    def gen_response_jitted(self, features, allpars, criteria, changing_bound,
+                            trind):
         toresponse_intern = np.r_[-1, self.toresponse[1]]
             
         # call the compiled function
@@ -748,7 +750,7 @@ class rotated_directions(rtmodel):
                 allpars['intstd'], allpars['bound'], allpars['bstretch'], 
                 allpars['bshape'], allpars['ndtloc'], allpars['ndtspread'], 
                 allpars['lapseprob'], allpars['lapsetoprob'], changing_bound,
-                0 if self.ndtdist == 'lognormal' else 1)
+                0 if self.ndtdist == 'lognormal' else 1, trind)
             
         return choices, rts
 
@@ -756,7 +758,7 @@ class rotated_directions(rtmodel):
 def gen_response_jitted_dir(
         features, maxrt, toresponse, choices, dt, directions, criteria,
         prior, bias, noisestd, intstd, bound, bstretch, bshape, ndtloc, 
-        ndtspread, lapseprob, lapsetoprob, changing_bound, ndtdist):
+        ndtspread, lapseprob, lapsetoprob, changing_bound, ndtdist, trind):
     
     D = len(directions)
     C = len(choices)
@@ -765,6 +767,7 @@ def gen_response_jitted_dir(
     
     if D2 == D:
         use_liks = True
+        N = trind.size
     else:
         use_liks = False
     
@@ -819,7 +822,7 @@ def gen_response_jitted_dir(
                 for d in range(D):
                     if use_liks:
                         logpost[d] += dt * (
-                                random.normalvariate(features[t, d, tr],
+                                random.normalvariate(features[t, d, trind[tr]],
                                                      noisestd[tr])
                                 / intstd[tr] ** 2)
                     else:
