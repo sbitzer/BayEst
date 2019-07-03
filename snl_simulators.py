@@ -263,25 +263,47 @@ class Stats_id(object):
     
             
 #%% function returning simulator and summary stats for a given subject
-def create_simulator(data, pars, stats='hist', exclude_to=False, 
-                     ndtdist='lognorm', fix={}):
+def create_simulator(sub, pars, use_liks=False, stats='hist', exclude_to=False, 
+                     censor_late=True, ndtdist='lognorm', fix={}):
+    data = helpers.load_subject(sub, exclude_to=exclude_to, 
+                                censor_late=censor_late)
+    
     # first of these indicates clockwise rotation, second anti-clockwise
     choices = [1, -1]
     
     # identify the model based on inferred parameters
     modelstr = identify_model(np.r_[pars.names, fix.keys()])
     if modelstr == 'diff':
-        model = dirdiffmodel(
-            {'directions': data.tarDir, 'criteria': data.critDir}, helpers.dt, 
-            maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
-            choices=choices, ndtdist=ndtdist, **fix)
+        if use_liks is None:
+            model = dirdiffmodel(
+                {'directions': data.tarDir, 'criteria': data.critDir}, 
+                helpers.dt, maxrt=helpers.maxrt + helpers.dt, 
+                toresponse=helpers.toresponse, choices=choices, 
+                ndtdist=ndtdist, **fix)
+        else:
+            pass
     else:
-        model = dirmodel(
-            data.tarDir / 180. * np.pi, helpers.dt, 
-            data.tarDir.unique() / 180. * np.pi, data.critDir / 180. * np.pi, 
-            maxrt=helpers.maxrt + helpers.dt, toresponse=helpers.toresponse, 
-            choices=choices, ndtdist=ndtdist, **fix)
-    
+        if use_liks:
+            Trials, trind, channels = helpers.load_subject_eeg(sub)
+            directions = -channels % (2 * np.pi)
+            
+            data = data.reindex(trind)
+            
+            model = dirmodel(
+                    Trials, dt=helpers.dt, directions=directions,
+                    criteria=data.critDir / 180. * np.pi, 
+                    maxrt=helpers.maxrt + helpers.dt,
+                    toresponse=helpers.toresponse, choices=choices, 
+                    ndtdist=ndtdist, trial_dirs=data.tarDir / 180. * np.pi,
+                    **fix)
+        else:
+            model = dirmodel(
+                data.tarDir / 180. * np.pi, helpers.dt, 
+                data.tarDir.unique() / 180. * np.pi, 
+                data.critDir / 180. * np.pi, maxrt=helpers.maxrt + helpers.dt,
+                toresponse=helpers.toresponse, choices=choices, 
+                ndtdist=ndtdist, **fix)
+            
     if stats == 'hist':
         stats = Stats_hist(model, pars, data['easy'], rts=data.RT, 
                            exclude_to=exclude_to)
