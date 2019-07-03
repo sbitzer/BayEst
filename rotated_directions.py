@@ -148,20 +148,27 @@ class rotated_directions(rtmodel):
         """The correct choice for each trial."""
         return self._correct
                 
-    def gen_correct(self):
+    def gen_correct(self, dirs=None):
         """Tries to figure out correct choice from directions and criteria."""
         
-        if self.use_liks:
+        if self.use_liks and dirs is None:
             correct = np.full(self.L, np.nan)
         else:
+            if dirs is not None:
+                assert dirs.size == self.L
+                dirs = np.array(dirs)
+                
             correct = np.zeros(self.L)
             for tr in range(self.L):
                 if self.use_features:
                     # determine average direction in trial from stored features
                     direction = np.atan2(np.sin(self._Trials[:, tr]).sum(),
                                          np.cos(self._Trials[:, tr]).sum())
+                elif dirs is not None:
+                    direction = dirs[tr]
                 else:
                     direction = self.directions[self._Trials[tr]]
+                
                 direction = np.atleast_1d(direction)
                 
                 cw, acw, ontop, between = get_rotations(direction,
@@ -282,7 +289,8 @@ class rotated_directions(rtmodel):
     def __init__(self, Trials, dt=1, directions=8, criteria=0, prior=None, 
                  bias=0.5, noisestd=1, intstd=1, bound=0.8, bstretch=0, 
                  bshape=1.4, ndtloc=-12, ndtspread=0, lapseprob=0.05,
-                 lapsetoprob=0.1, ndtdist='lognormal', **rtmodel_args):
+                 lapsetoprob=0.1, ndtdist='lognormal', trial_dirs=None,
+                 **rtmodel_args):
         super(rotated_directions, self).__init__(**rtmodel_args)
             
         self._during_init = True
@@ -342,7 +350,7 @@ class rotated_directions(rtmodel):
         self.lapsetoprob = lapsetoprob
         
         # figure out the correct choice in each trial
-        self.gen_correct()
+        self.gen_correct(trial_dirs)
         
         # check whether design is balanced (and warn if not)
         self.check_balance()
