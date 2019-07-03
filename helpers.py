@@ -10,9 +10,11 @@ import os, re
 from glob import glob
 import pandas as pd
 import numpy as np
+import scipy.signal
 import matplotlib.pyplot as plt
 from rotated_directions import identify_model
 
+eegdir = "../data/EEG"
 datadir = "../data/behaviour/Data/raw"
 resultsdir = "../inf_results/behaviour"
 
@@ -68,6 +70,24 @@ def load_subject(sub, exclude_to=False, censor_late=True):
     # returned object is otherwise only a reference to the full dataframe
     return data[['easy', 'tarDir', 'critDir', 'RT', 'response', 'error']
                 ].copy()
+    
+    
+def load_subject_eeg(sub, olddt=1/256.):
+    """Loads EEG data, resamples to set dt, brings into `Trials` format
+    and scales to std=1 across all data."""
+    fpath = os.path.join(eegdir, 's%02d_chresp_Unsrtd.h5' % sub)
+    
+    with pd.HDFStore(fpath, 'r') as store:
+        data = store.root.CHRSP.read()
+        trind = store.root.TRLS.read()
+        channels = store.root.CHNLS.read()
+        
+    oldt = np.arange(0, data.shape[2] * olddt, olddt)
+    
+    Trials, newt = scipy.signal.resample(
+            data.transpose(2, 1, 0), int(round(oldt[-1] / dt)), oldt)
+            
+    return Trials / Trials.std(), trind, channels
     
     
 def diff_diff(ch, rt, easy, correct):
