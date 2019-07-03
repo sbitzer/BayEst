@@ -418,7 +418,7 @@ class rotated_directions(rtmodel):
                                                     self.criteria[tr])
             
             if self.use_liks:
-                logliks[:, :, i] = self.Trials[:, :, i] / self.intstd ** 2
+                logliks[:, :, i] = self.Trials[:-1, :, i] / self.intstd ** 2
             else:
                 # sample feature values (observed directions)
                 if self.use_features:
