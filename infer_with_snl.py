@@ -69,28 +69,27 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 
 #%%
 #subjects = helpers.find_available_subjects()
-subjects = [19]
+subjects = [18]
 
-censor_late = True
-exclude_to = False
-
-stats = 'hist'
+options = dict(use_liks=True,
+               censor_late=True,
+               exclude_to=False,
+               stats='hist')
 
 resdir = os.path.join(helpers.resultsdir, 'snl', 'rotated_directions', 
                       pd.datetime.now().strftime('%Y%m%d%H%M'))
 os.mkdir(resdir)
 
 for sub in subjects:
-    data = helpers.load_subject(sub, exclude_to=exclude_to, 
-                                censor_late=censor_late)
-    
-    if stats == 'id':
+    if options['stats'] == 'id':
+        data = helpers.load_subject(sub, exclude_to=options['exclude_to'], 
+                                    censor_late=options['censor_late'])
         conditions = data.easy
     else:
         conditions = None
     
     sim, stat, data = snlsim.create_simulator(
-            data, pars, stats, exclude_to, ndtdist, fix)
+            sub, pars, ndtdist=ndtdist, fix=fix, **options)
     
 #    p = pars.sample(10)
 #    stat.calc(sim.sim(p))
@@ -99,7 +98,7 @@ for sub in subjects:
 
 
 #%%
-    fbase = os.path.join(resdir, 's%02d_' % sub + stats)
+    fbase = os.path.join(resdir, 's%02d_' % sub + options['stats'])
     snl.run_snl(obs_xs, sim, stat, prior, filebase=fbase, conditions=conditions)
     
     with pd.HDFStore(fbase + '.h5', 'r+') as store:
@@ -109,14 +108,15 @@ for sub in subjects:
         store['prior_cov'] = pd.DataFrame(pars.cov, columns=pars.names, 
                                           index=pars.names)
         store['data_info'] = pd.Series(
-                [sub, censor_late, exclude_to], 
-                index=['subject', 'censor_late', 'exclude_to'])
-        store['stats'] = pd.Series(stats)
+                [sub, options['censor_late'], options['exclude_to'],
+                 options['use_liks']], 
+                index=['subject', 'censor_late', 'exclude_to', 'use_liks'])
+        store['stats'] = pd.Series(options['stats'])
         store['ndtdist'] = pd.Series(ndtdist)
         
-        if stats == 'hist':
+        if options['stats'] == 'hist':
             store['stats_opt'] = pd.Series(stat.bins)
-        elif stats == 'quant':
+        elif options['stats'] == 'quant':
             store['stats_opt'] = pd.Series(stat.percentiles)
 
 
