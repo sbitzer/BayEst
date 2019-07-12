@@ -829,10 +829,8 @@ def gen_response_jitted_dir(
                 # compute log-probabilities of directions
                 for d in range(D):
                     if use_liks:
-                        logpost[d] += dt * (
-                                random.normalvariate(features[t, d, trind[tr]],
-                                                     noisestd[tr])
-                                / intstd[tr] ** 2)
+                        logpost[d] += (dt * features[t, d, trind[tr]]
+                                       / intstd[tr] ** 2)
                     else:
                         logpost[d] += dt * (
                                 math.cos(noisy_feature - directions[d])

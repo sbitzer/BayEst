@@ -23,11 +23,14 @@ import matplotlib.pyplot as plt
 #%% define parameters and their prior
 ndtdist = 'uniform'
 modelname = 'base'
+use_liks = True
 
 pars = parameters.parameter_container()
 
 if modelname == 'base':
     fix = {'bound': 0.7}
+    if use_liks:
+        fix = {'noisestd': 0}
     
     if 'noisestd' not in fix.keys():
         pars.add_param('noisestd', 0, 1.2, exponential())
@@ -71,7 +74,7 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 #subjects = helpers.find_available_subjects()
 subjects = [18]
 
-options = dict(use_liks=True,
+options = dict(use_liks=use_liks,
                censor_late=True,
                exclude_to=False,
                stats='hist')
