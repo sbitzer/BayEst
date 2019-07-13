@@ -30,7 +30,7 @@ pars = parameters.parameter_container()
 if modelname == 'base':
     fix = {'bound': 0.7}
     if use_liks:
-        fix = {'noisestd': 0}
+        fix['noisestd'] = 0
     
     if 'noisestd' not in fix.keys():
         pars.add_param('noisestd', 0, 1.2, exponential())
