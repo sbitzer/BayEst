@@ -71,8 +71,9 @@ prior = snl.pdfs.Gaussian(m=pars.mu, S=pars.cov)
 
 
 #%%
-#subjects = helpers.find_available_subjects()
-subjects = [18]
+subjects = helpers.find_available_subjects(
+        eegdir=helpers.eegdir if use_liks else None)
+#subjects = [18]
 
 options = dict(use_liks=use_liks,
                censor_late=True,

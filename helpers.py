@@ -23,14 +23,21 @@ maxrt = 2.0
 choices = dict(left=-1, right=1)
 toresponse = [0, 3.0]
 
-def find_available_subjects(datadir=datadir):
+def find_available_subjects(datadir=datadir, eegdir=None):
     """checks directories for data files (one per subject) and returns 
-    available subjects."""
+    available subjects. When `eegdir`is given only subjects with available
+    EEG data will be returned."""
+    
+    if eegdir is not None:
+        datadir = eegdir
     
     _, _, filenames = next(os.walk(datadir))
     subjects = []
     for fname in filenames:
-        match = re.match('^s(\d+)_main_data.txt$', fname)
+        if eegdir is None:
+            match = re.match('^s(\d+)_main_data.txt$', fname)
+        else:
+            match = re.match('^s(\d+)_chresp_Unsrtd.h5$', fname)
         if match is not None:
             subjects.append(int(match.group(1)))
     
