@@ -347,17 +347,15 @@ def generate_posterior_predictive_data(resultpath, subject, stats,
         else:
             psamples = store['parameters']
             
-        exclude_to = store['data_info']['exclude_to']
-        censor_late = store['data_info']['censor_late']
+        options = store['data_info']
+        del options['subject']
+        options['stats'] = stats
         ndtdist = store['ndtdist'][0]
         
         fix = store['fix']
     
-    data = helpers.load_subject(subject, exclude_to=exclude_to, 
-                                    censor_late=censor_late)
-    
     sim, stat, data = create_simulator(
-            data, pars, stats, exclude_to, ndtdist, fix)
+            subject, pars, ndtdist=ndtdist, fix=fix, **options)
     
     # will fail with NameError when psamples undefined
     try:
@@ -448,9 +446,8 @@ def estimate_posterior_fit(resultpath, subjects, stats,
     for sub in subjects:
         if hddmresult:
             with pd.HDFStore(resultpath, 'r') as store:
-                opts = store['scalar_opt']
-                exclude_to = opts.exclude_to
-                censor_late = opts.censor_late
+                options = dict(exclude_to=store['scalar_opt'].exclude_to,
+                               censor_late=store['scalar_opt'].censor_late)
                 
                 # dummy variables for creation of stat object
                 pars = create_default_params(['bias', 'noisestd'])
@@ -460,8 +457,9 @@ def estimate_posterior_fit(resultpath, subjects, stats,
             hfile = os.path.join(resultpath, 's%02d_%s.h5' % (sub, stats))
             with pd.HDFStore(hfile, 'r') as store:
                 pars = create_default_params(store['parameters'].columns)
-                exclude_to = store['data_info']['exclude_to']
-                censor_late = store['data_info']['censor_late']
+                
+                options = store['data_info']
+                
                 ndtdist = store['ndtdist'][0]
                 fix = store['fix']
                 try:
@@ -474,12 +472,13 @@ def estimate_posterior_fit(resultpath, subjects, stats,
                          .get_level_values(np.bytes_('round')).unique().size)
                 
                 simdata = store['simdata'].loc[R]
+                
+        if 'subject' in options:
+            del options['subject']
+        options['stats'] = stats
             
-        data = helpers.load_subject(sub, exclude_to=exclude_to, 
-                                    censor_late=censor_late)
-
         sim, stat, data = create_simulator(
-                data, pars, stats, exclude_to, ndtdist, fix)
+                sub, pars, ndtdist=ndtdist, fix=fix, **options)
         
         obs_xs = stat.calc(data[['response', 'RT']])
         
