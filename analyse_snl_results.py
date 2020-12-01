@@ -22,7 +22,7 @@ import seaborn as sns
 stats = 'hist'
 
 result = os.path.join(helpers.resultsdir, 
-                      'snl/rotated_directions/201811021934')
+                      'snl/rotated_directions/201907240843')
 
 comparison_result = os.path.join(
         helpers.resultsdir, 'snl/rotated_directions/201807061824')
@@ -81,7 +81,8 @@ for sub in subjects:
             snlsim.generate_posterior_predictive_data(
                     comparison_result, sub, stats))
         diff_post_comp.loc[sub, 'accuracy'], diff_post_comp.loc[sub, 'median RT'] = (
-            helpers.diff_diff(choices_post_comp, rts_post_comp, data.easy, 
+            helpers.diff_diff(choices_post_comp.reindex(data.index),
+                              rts_post_comp.reindex(data.index), data.easy, 
                               model.correct))
     
     dacc, dmed = helpers.diff_diff(
